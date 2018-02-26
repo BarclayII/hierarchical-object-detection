@@ -38,7 +38,10 @@ class RLClassifierLoss(NN.Module):
         r = T.stack(r_list, 1)
 
         self.r = r
-        self.b = r.mean(0, keepdim=True)
+        if not hasattr(self, 'b'):
+            self.b = r.clone()
+        else:
+            self.b = self.ema * self.b + self.r
 
         gamma = self.gamma ** tovar(
                 T.arange(n_steps)[None, :, None].expand_as(r))
