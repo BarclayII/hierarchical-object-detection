@@ -96,6 +96,7 @@ class SequentialGlimpsedClassifier(NN.Module):
         self.n_max = n_max
         self.lstm_dims = lstm_dims
         self.n_classes = n_classes
+        self.n_class_embed_dims = n_class_embed_dims
 
         self.relative_previous = relative_previous
 
