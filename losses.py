@@ -6,12 +6,14 @@ import copy
 from util import *
 
 class RLClassifierLoss(NN.Module):
-    def __init__(self, correct=1, incorrect=-1, gamma=1, ewma=0.7):
+    def __init__(self, correct=1, incorrect=-1, gamma=1, ewma=0.7,
+                 force_last_prediction=True):
         NN.Module.__init__(self)
         self.correct = correct
         self.incorrect = incorrect
         self.gamma = gamma
         self.ewma = ewma
+        self.force_last_prediction = force_last_prediction
 
     def forward(self, y, y_hat, log_y_hat, p, log_p):
         '''
@@ -19,6 +21,8 @@ class RLClassifierLoss(NN.Module):
         '''
         y = y.clone()
         pb = p.byte()
+        if self.force_last_prediction:
+            pb[:, -1] = (pb[:, :-1].sum(1) == 0)
         r_list = []
         log_prob_list = []
         n_steps = y_hat.size()[1]
@@ -34,12 +38,12 @@ class RLClassifierLoss(NN.Module):
         r = T.stack(r_list, 1)
 
         self.r = r
-        self.b = 0
+        self.b = r.mean(0, keepdim=True)
 
         gamma = self.gamma ** tovar(
                 T.arange(n_steps)[None, :, None].expand_as(r))
         self.q = reverse(reverse(gamma * (r - self.b), 1).cumsum(1), 1)
-        self.logprob = log_p + p * log_y_hat
+        self.logprob = log_p + pb.float() * log_y_hat
 
         loss = -(self.logprob * self.q).mean()
         return loss
