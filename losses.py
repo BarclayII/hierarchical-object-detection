@@ -41,7 +41,7 @@ class RLClassifierLoss(NN.Module):
         if not hasattr(self, 'b'):
             self.b = r.clone()
         else:
-            self.b = self.ema * self.b + self.r
+            self.b = self.ewma * self.b + self.r
 
         gamma = self.gamma ** tovar(
                 T.arange(n_steps)[None, :, None].expand_as(r))
