@@ -38,10 +38,7 @@ class RLClassifierLoss(NN.Module):
         r = T.stack(r_list, 1)
 
         self.r = r
-        if not hasattr(self, 'b'):
-            self.b = r.clone()
-        else:
-            self.b = self.ewma * self.b + self.r
+        self.b = r.mean(0, keepdim=True)
 
         gamma = self.gamma ** tovar(
                 T.arange(n_steps)[None, :, None].expand_as(r))
@@ -50,3 +47,11 @@ class RLClassifierLoss(NN.Module):
 
         loss = -(self.logprob * self.q).mean()
         return loss
+
+class SupervisedClassifierLoss(NN.Module):
+    def forward(self, y, y_pre, p_pre):
+        y_loss = F.cross_entropy(y_pre[:, -1], y)
+        p = p_pre.clone().zero_()
+        p[:, -1] = 1
+        p_loss = F.binary_cross_entropy_with_logits(p_pre, p)
+        return y_loss + p_loss

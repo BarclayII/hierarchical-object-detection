@@ -1,6 +1,7 @@
 
 import torch as T
 import torch.nn as NN
+import torch.nn.init as INIT
 import torch.nn.functional as F
 import numpy as NP
 import numpy.random as RNG
@@ -14,15 +15,18 @@ def build_cnn(**config):
     in_channels = config.get('in_channels', 3)
 
     for i in range(len(filters)):
-        cnn_list.append(NN.Conv2d(
+        module = NN.Conv2d(
             in_channels if i == 0 else filters[i-1],
             filters[i],
             kernel_size,
             padding=tuple((_ - 1) // 2 for _ in kernel_size),
-            ))
+            )
+        INIT.xavier_uniform(module.weight)
+        INIT.constant(module.bias, 0)
+        cnn_list.append(module)
         if i < len(filters) - 1:
             cnn_list.append(NN.ReLU())
-    cnn_list.append(NN.AdaptiveAvgPool2d((1, 1)))
+    cnn_list.append(NN.MaxPool2d((2, 2)))
 
     return NN.Sequential(*cnn_list)
 
@@ -32,10 +36,13 @@ def build_mlp(**config):
     layer_sizes = config['layer_sizes']
 
     for i in range(len(layer_sizes)):
-        mlp_list.append(NN.Linear(
+        module = NN.Linear(
             input_size if i == 0 else layer_sizes[i-1],
             layer_sizes[i],
-            ))
+            )
+        INIT.xavier_uniform(module.weight)
+        INIT.constant(module.bias, 0)
+        mlp_list.append(module)
         if i < len(layer_sizes) - 1:
             mlp_list.append(NN.ReLU())
 
@@ -66,9 +73,14 @@ class SequentialGlimpsedClassifier(NN.Module):
                 kernel_size=kernel_size,
                 )
         self.lstm = NN.LSTMCell(
-                pre_lstm_filters[-1] + n_class_embed_dims + self.glimpse.att_params,
+                pre_lstm_filters[-1] * NP.asscalar(NP.prod(glimpse_size)) // 4 +
+                n_class_embed_dims + self.glimpse.att_params,
                 lstm_dims,
                 )
+        INIT.xavier_uniform(self.lstm.weight_ih)
+        INIT.orthogonal(self.lstm.weight_hh)
+        INIT.constant(self.lstm.bias_ih, 0)
+        INIT.constant(self.lstm.bias_hh, 0)
         self.proj_y = build_mlp(input_size=lstm_dims,
                                 layer_sizes=[mlp_dims, n_classes])
         self.proj_p = build_mlp(input_size=lstm_dims,
@@ -107,7 +119,7 @@ class SequentialGlimpsedClassifier(NN.Module):
         for t in range(self.n_max):
             v_B_list.append(v_B)
             g = self.glimpse(x, v_B[:, None])[:, 0]
-            v_s = self.cnn(g)[:, :, 0, 0]
+            v_s = self.cnn(g).view(batch_size, -1)
             in_ = T.cat([v_s, y_emb, v_B], 1)
             h, c = self.lstm(in_, (h, c))
             y_pre = self.proj_y(h)

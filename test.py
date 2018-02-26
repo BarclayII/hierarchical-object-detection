@@ -8,7 +8,7 @@ import numpy.random as RNG
 from datasets import MNISTMulti
 
 mnist = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70)
-batch_size = 8
+batch_size = 32
 mnist_dataloader = T.utils.data.DataLoader(mnist, batch_size=batch_size, shuffle=True, drop_last=True)
 
 model = models.SequentialGlimpsedClassifier()
