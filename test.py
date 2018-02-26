@@ -11,7 +11,7 @@ mnist = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70)
 batch_size = 32
 mnist_dataloader = T.utils.data.DataLoader(mnist, batch_size=batch_size, shuffle=True, drop_last=True)
 
-model = models.SequentialGlimpsedClassifier()
+model = models.SequentialGlimpsedClassifier(n_max=20, lstm_dims=512, mlp_dims=512, n_class_embed_dims=50)
 opt = T.optim.Adam(model.parameters())
 loss_fn = losses.RLClassifierLoss()
 ones = T.ones(batch_size, 10).long()

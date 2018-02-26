@@ -13,6 +13,7 @@ def build_cnn(**config):
     filters = config['filters']
     kernel_size = config['kernel_size']
     in_channels = config.get('in_channels', 3)
+    final_pool_size = config['final_pool_size']
 
     for i in range(len(filters)):
         module = NN.Conv2d(
@@ -26,7 +27,7 @@ def build_cnn(**config):
         cnn_list.append(module)
         if i < len(filters) - 1:
             cnn_list.append(NN.ReLU())
-    cnn_list.append(NN.MaxPool2d((2, 2)))
+    cnn_list.append(NN.MaxPool2d(final_pool_size))
 
     return NN.Sequential(*cnn_list)
 
@@ -55,11 +56,12 @@ class SequentialGlimpsedClassifier(NN.Module):
     '''
     def __init__(self,
                  pre_lstm_filters=[5, 5, 10],
-                 lstm_dims=32,
+                 lstm_dims=128,
                  kernel_size=(3, 3),
+                 final_pool_size=(5, 5),
                  n_max=10,
                  in_channels=3,
-                 mlp_dims=32,
+                 mlp_dims=128,
                  n_classes=10,
                  n_class_embed_dims=10,
                  glimpse_type='gaussian',
@@ -71,9 +73,11 @@ class SequentialGlimpsedClassifier(NN.Module):
         self.cnn = build_cnn(
                 filters=pre_lstm_filters,
                 kernel_size=kernel_size,
+                final_pool_size=final_pool_size,
                 )
         self.lstm = NN.LSTMCell(
-                pre_lstm_filters[-1] * NP.asscalar(NP.prod(glimpse_size)) // 4 +
+                pre_lstm_filters[-1] * NP.asscalar(NP.prod(glimpse_size)) //
+                NP.asscalar(NP.prod(final_pool_size)) +
                 n_class_embed_dims + self.glimpse.att_params,
                 lstm_dims,
                 )
@@ -103,7 +107,7 @@ class SequentialGlimpsedClassifier(NN.Module):
 
         v_B = (self.glimpse.full().unsqueeze(0)
                .expand(batch_size, self.glimpse.att_params))
-        y_emb = tovar(T.zeros(batch_size, self.n_classes))
+        y_emb = tovar(T.zeros(batch_size, self.n_class_embed_dims))
         h = tovar(T.zeros(batch_size, self.lstm_dims))
         c = tovar(T.zeros(batch_size, self.lstm_dims))
 
