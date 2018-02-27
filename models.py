@@ -27,7 +27,7 @@ def build_cnn(**config):
         cnn_list.append(module)
         if i < len(filters) - 1:
             cnn_list.append(NN.ReLU())
-    cnn_list.append(NN.MaxPool2d(final_pool_size))
+    cnn_list.append(NN.AdaptiveMaxPool2d(final_pool_size))
 
     return NN.Sequential(*cnn_list)
 
@@ -58,7 +58,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                  pre_lstm_filters=[5, 5, 10],
                  lstm_dims=128,
                  kernel_size=(3, 3),
-                 final_pool_size=(5, 5),
+                 final_pool_size=(2, 2),
                  n_max=10,
                  in_channels=3,
                  mlp_dims=128,
@@ -76,8 +76,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                 final_pool_size=final_pool_size,
                 )
         self.lstm = NN.LSTMCell(
-                pre_lstm_filters[-1] * NP.asscalar(NP.prod(glimpse_size)) //
-                NP.asscalar(NP.prod(final_pool_size)) +
+                pre_lstm_filters[-1] * NP.asscalar(NP.prod(final_pool_size)) +
                 n_class_embed_dims + self.glimpse.att_params,
                 lstm_dims,
                 )
