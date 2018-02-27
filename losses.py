@@ -51,7 +51,8 @@ class RLClassifierLoss(NN.Module):
 class SupervisedClassifierLoss(NN.Module):
     def forward(self, y, y_pre, p_pre):
         y_loss = F.cross_entropy(y_pre[:, -1], y)
-        p = p_pre.clone().zero_()
-        p[:, -1] = 1
-        p_loss = F.binary_cross_entropy_with_logits(p_pre, p)
+        #p = p_pre.clone().zero_()
+        #p[:, -1] = 1
+        #p_loss = F.binary_cross_entropy_with_logits(p_pre, p)
+        p_loss = 0
         return y_loss + p_loss

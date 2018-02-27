@@ -151,7 +151,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                 y_hat_list.append(y_hat)
                 y_hat_logprob = y_hat_logprob.gather(1, y_hat)
                 y_hat_logprob_list.append(y_hat_logprob)
-                y_emb = self.y_in(y_hat[:, 0]) * p
+                y_emb = self.y_in(y_hat[:, 0]) * 0
 
         self.y_pre = T.stack(y_pre_list, 1)
         self.p_pre = T.stack(p_pre_list, 1)

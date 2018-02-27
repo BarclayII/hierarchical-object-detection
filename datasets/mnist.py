@@ -30,6 +30,8 @@ def mnist_bbox(data):
 
 class MNISTMulti(Dataset):
     dir_ = 'multi'
+    seeds = {'train': 1000, 'valid': 2000, 'test': 3000}
+    attr_prefix = {'train': 'training', 'valid': 'valid', 'test': 'test'}
 
     @property
     def _meta(self):
@@ -47,9 +49,13 @@ class MNISTMulti(Dataset):
     def test_file(self):
         return os.path.join(self.dir_, 'test-' + self._meta)
 
+    @property
+    def valid_file(self):
+        return os.path.join(self.dir_, 'valid-' + self._meta)
+
     def __init__(self,
                  root,
-                 train=True,
+                 mode='train',
                  transform=None,
                  target_transform=None,
                  download=False,
@@ -57,7 +63,7 @@ class MNISTMulti(Dataset):
                  image_cols=100,
                  n_digits=1,
                  backrand=0):
-        self.train = train
+        self.mode = mode
         self.image_rows = image_rows
         self.image_cols = image_cols
         self.n_digits = n_digits
@@ -66,30 +72,33 @@ class MNISTMulti(Dataset):
         if os.path.exists(self.dir_):
             if os.path.isfile(self.dir_):
                 raise NotADirectoryError(self.dir_)
-            elif os.path.exists(self.training_file) and train:
-                data = T.load(self.training_file)
-                self.train_data = data['data']
-                self.train_labels = data['labels']
-                self.train_locs = data['locs']
-                self.size = self.train_data.size()[0]
-                return
-            elif os.path.exists(self.test_file) and not train:
-                data = T.load(self.test_file)
-                self.test_data = data['data']
-                self.test_labels = data['labels']
-                self.test_locs = data['locs']
-                self.size = self.test_data.size()[0]
+            elif os.path.exists(getattr(self, self.attr_prefix[mode] + '_file')):
+                data = T.load(getattr(self, self.attr_prefix[mode] + '_file'))
+                for k in data:
+                    setattr(self, mode + '_' + k, data[k])
+                self.size = getattr(self, mode + '_data').size()[0]
                 return
         elif not os.path.exists(self.dir_):
             os.makedirs(self.dir_)
 
-        for _train in [False, True]:
+        valid_src_size = 10000 // n_digits
+
+        for _mode in ['train', 'valid', 'test']:
+            _train = (_mode != 'test')
             mnist = MNIST(root, _train, transform, target_transform, download)
-            src_data = getattr(mnist, 'train_data' if _train else 'test_data')
-            src_labels = getattr(mnist, 'train_labels' if _train else 'test_labels')
+
+            if _mode == 'train':
+                src_data = mnist.train_data[:-valid_src_size]
+                src_labels = mnist.train_labels[:-valid_src_size]
+            elif _mode == 'valid':
+                src_data = mnist.train_data[-valid_src_size:]
+                src_labels = mnist.train_labels[-valid_src_size:]
+            elif _mode == 'test':
+                src_data = mnist.test_data
+                src_labels = mnist.test_labels
 
             with T.random.fork_rng():
-                T.random.manual_seed(1000 if _train else 2000)
+                T.random.manual_seed(self.seeds[_mode])
 
                 n_samples, n_rows, n_cols = src_data.size()
                 n_new_samples = n_samples * n_digits
@@ -127,24 +136,16 @@ class MNISTMulti(Dataset):
                 'data': data,
                 'labels': labels,
                 'locs': locs,
-                }, self.training_file if _train else self.test_file)
+                }, getattr(self, self.attr_prefix[_mode] + '_file'))
 
-            if train and _train:
-                self.train_data = data
-                self.train_labels = labels
-                self.train_locs = locs
-                self.size = data.size()[0]
-            elif not train and not _train:
-                self.test_data = data
-                self.test_labels = labels
-                self.test_locs = locs
+            if _mode == mode:
+                setattr(self, mode + '_data', data)
+                setattr(self, mode + '_labels', labels)
+                setattr(self, mode + '_locs', locs)
                 self.size = data.size()[0]
 
     def __len__(self):
         return self.size
 
     def __getitem__(self, i):
-        if self.train:
-            return self.train_data[i], self.train_labels[i], self.train_locs[i]
-        else:
-            return self.test_data[i], self.test_labels[i], self.test_locs[i]
+        return tuple(getattr(self, self.mode + '_' + k)[i] for k in ['data', 'labels', 'locs'])
