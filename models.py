@@ -129,7 +129,7 @@ class SequentialGlimpsedClassifier(NN.Module):
             y_pre = self.proj_y(h)
             p_pre = self.proj_p(h)
             v_B_pre = self.proj_B(h)
-            v_B_pre = partial_elemwise(v_B_pre, [None, None, F.softplus, F.softplus, F.softplus, F.softplus])
+            v_B_pre = self.glimpse.rescale(v_B_pre)
 
             if self.relative_previous:
                 v_B = self.glimpse.relative_to_absolute(v_B_pre, v_B)

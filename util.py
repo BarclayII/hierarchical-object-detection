@@ -43,8 +43,3 @@ def grad_clip(params, max_l2):
             if p.grad is not None:
                 p.grad.data /= norm / max_l2
     return norm
-
-def partial_elemwise(x, ops, dim=-1):
-    x = T.unbind(x, dim)
-    y = [op(_x) if op is not None else _x for _x, op in zip(x, ops)]
-    return T.stack(y, dim)
