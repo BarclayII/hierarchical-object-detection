@@ -64,7 +64,7 @@ def extract_gaussian_glims(x, a, glim_size):
 
     return g
 
-softplus_one = F.softplus(tovar([1.]))
+softplus_zero = F.softplus(tovar([0]))
 
 class GaussianGlimpse(NN.Module):
     att_params = 6
@@ -80,12 +80,20 @@ class GaussianGlimpse(NN.Module):
     @classmethod
     def rescale(cls, x):
         y = [
-                x[..., 0] + 0.5,    # cx
-                x[..., 1] + 0.5,    # cy
-                F.softplus(x[..., 2]) / softplus_one,   #dx
-                F.softplus(x[..., 3]) / softplus_one,   #dy
-                F.softplus(x[..., 4]) / softplus_one * 0.5, # sx
-                F.softplus(x[..., 5]) / softplus_one * 0.5, # sy
+                F.sigmoid(x[..., 0]),    # cx
+                F.sigmoid(x[..., 1]),    # cy
+                #F.softplus(x[..., 2]) / softplus_zero,   #dx
+                #F.softplus(x[..., 3]) / softplus_zero,   #dy
+                #F.softplus(x[..., 4]) / softplus_zero * 0.5, # sx
+                #F.softplus(x[..., 5]) / softplus_zero * 0.5, # sy
+                F.sigmoid(x[..., 2]) * 2,
+                F.sigmoid(x[..., 3]) * 2,
+                F.sigmoid(x[..., 4]),
+                F.sigmoid(x[..., 5]),
+                #x[..., 2].exp(),
+                #x[..., 3].exp(),
+                #x[..., 4].exp() * 0.5,
+                #x[..., 5].exp() * 0.5,
                 ]
         return T.stack(y, -1)
 

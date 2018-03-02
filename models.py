@@ -41,7 +41,10 @@ def build_mlp(**config):
             input_size if i == 0 else layer_sizes[i-1],
             layer_sizes[i],
             )
-        INIT.xavier_uniform(module.weight)
+        if i == len(layer_sizes) - 1:
+            INIT.constant(module.weight, 0)
+        else:
+            INIT.xavier_uniform(module.weight)
         INIT.constant(module.bias, 0)
         mlp_list.append(module)
         if i < len(layer_sizes) - 1:
@@ -75,6 +78,8 @@ class SequentialGlimpsedClassifier(NN.Module):
                 kernel_size=kernel_size,
                 final_pool_size=final_pool_size,
                 )
+        for p in self.cnn.parameters():
+            p.requires_grad = False
         self.lstm = NN.LSTMCell(
                 pre_lstm_filters[-1] * NP.asscalar(NP.prod(final_pool_size)) +
                 n_class_embed_dims + self.glimpse.att_params,

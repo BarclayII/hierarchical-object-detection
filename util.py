@@ -35,11 +35,3 @@ def addbox(ax, b, ec):
     import matplotlib.patches as PA
     ax.add_patch(PA.Rectangle((b[0] - b[2] / 2, b[1] - b[3] / 2), b[2], b[3],
                  ec=ec, fill=False, lw=1))
-
-def grad_clip(params, max_l2):
-    norm = sum((p.grad.data ** 2).sum() for p in params if p.grad is not None) ** 0.5
-    if norm > max_l2:
-        for p in params:
-            if p.grad is not None:
-                p.grad.data /= norm / max_l2
-    return norm
