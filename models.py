@@ -22,11 +22,11 @@ def build_cnn(**config):
             kernel_size,
             padding=tuple((_ - 1) // 2 for _ in kernel_size),
             )
-        INIT.xavier_uniform(module.weight)
-        INIT.constant(module.bias, 0)
+        #INIT.xavier_uniform(module.weight)
+        #INIT.constant(module.bias, 0)
         cnn_list.append(module)
         if i < len(filters) - 1:
-            cnn_list.append(NN.ReLU())
+            cnn_list.append(NN.LeakyReLU())
     cnn_list.append(NN.AdaptiveMaxPool2d(final_pool_size))
 
     return NN.Sequential(*cnn_list)
@@ -42,13 +42,15 @@ def build_mlp(**config):
             layer_sizes[i],
             )
         if i == len(layer_sizes) - 1:
-            INIT.constant(module.weight, 0)
+            #INIT.constant(module.weight, 0)
+            pass
         else:
-            INIT.xavier_uniform(module.weight)
-        INIT.constant(module.bias, 0)
+            #INIT.xavier_uniform(module.weight)
+            pass
+        #INIT.constant(module.bias, 0)
         mlp_list.append(module)
         if i < len(layer_sizes) - 1:
-            mlp_list.append(NN.ReLU())
+            mlp_list.append(NN.LeakyReLU())
 
     return NN.Sequential(*mlp_list)
 
@@ -78,17 +80,17 @@ class SequentialGlimpsedClassifier(NN.Module):
                 kernel_size=kernel_size,
                 final_pool_size=final_pool_size,
                 )
-        for p in self.cnn.parameters():
-            p.requires_grad = False
+        #for p in self.cnn.parameters():
+        #    p.requires_grad = False
         self.lstm = NN.LSTMCell(
                 pre_lstm_filters[-1] * NP.asscalar(NP.prod(final_pool_size)) +
                 n_class_embed_dims + self.glimpse.att_params,
                 lstm_dims,
                 )
-        INIT.xavier_uniform(self.lstm.weight_ih)
-        INIT.orthogonal(self.lstm.weight_hh)
-        INIT.constant(self.lstm.bias_ih, 0)
-        INIT.constant(self.lstm.bias_hh, 0)
+        #INIT.xavier_uniform(self.lstm.weight_ih)
+        #INIT.orthogonal(self.lstm.weight_hh)
+        #INIT.constant(self.lstm.bias_ih, 0)
+        #INIT.constant(self.lstm.bias_hh, 0)
         self.proj_y = build_mlp(input_size=lstm_dims,
                                 layer_sizes=[mlp_dims, n_classes])
         self.proj_p = build_mlp(input_size=lstm_dims,
