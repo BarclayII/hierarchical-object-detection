@@ -35,7 +35,7 @@ def run():
 
     for epoch in range(100):
         #opt = T.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1 / (1 + 1e-1 * epoch))
-        opt = T.optim.RMSprop([p for p in model.parameters() if p.requires_grad], lr=1e-5)
+        opt = T.optim.RMSprop([p for p in model.parameters() if p.requires_grad], lr=3e-5)
         for i, (x, _y, B) in enumerate(mnist_train_dataloader):
             batch_size, n_rows, n_cols = x.size()
             y = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, _y, ones))

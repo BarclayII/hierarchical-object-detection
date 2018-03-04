@@ -7,6 +7,7 @@ import numpy as NP
 import numpy.random as RNG
 from util import *
 from glimpse import create_glimpse
+from zoneout import ZoneoutLSTMCell
 
 def build_cnn(**config):
     cnn_list = []
@@ -82,7 +83,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                 )
         #for p in self.cnn.parameters():
         #    p.requires_grad = False
-        self.lstm = NN.LSTMCell(
+        self.lstm = ZoneoutLSTMCell(
                 pre_lstm_filters[-1] * NP.asscalar(NP.prod(final_pool_size)) +
                 n_class_embed_dims + self.glimpse.att_params,
                 lstm_dims,
@@ -97,7 +98,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                                 layer_sizes=[mlp_dims, 1])
         self.proj_B = build_mlp(input_size=lstm_dims,
                                 layer_sizes=[mlp_dims, self.glimpse.att_params])
-        self.y_in = NN.Embedding(n_classes, n_class_embed_dims)
+        #self.y_in = NN.Embedding(n_classes, n_class_embed_dims)
 
         self.n_max = n_max
         self.lstm_dims = lstm_dims
@@ -115,8 +116,7 @@ class SequentialGlimpsedClassifier(NN.Module):
         v_B = (self.glimpse.full().unsqueeze(0)
                .expand(batch_size, self.glimpse.att_params))
         y_emb = tovar(T.zeros(batch_size, self.n_class_embed_dims))
-        h = tovar(T.zeros(batch_size, self.lstm_dims))
-        c = tovar(T.zeros(batch_size, self.lstm_dims))
+        s = self.lstm.zero_state(batch_size)
 
         y_pre_list = []
         p_pre_list = []
@@ -132,7 +132,7 @@ class SequentialGlimpsedClassifier(NN.Module):
             g = self.glimpse(x, v_B[:, None])[:, 0]
             v_s = self.cnn(g).view(batch_size, -1)
             in_ = T.cat([v_s, y_emb, v_B], 1)
-            h, c = self.lstm(in_, (h, c))
+            h, s = self.lstm(in_, s)
             y_pre = self.proj_y(h)
             p_pre = self.proj_p(h)
             v_B_pre = self.proj_B(h)
@@ -158,7 +158,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                 y_hat_list.append(y_hat)
                 y_hat_logprob = y_hat_logprob.gather(1, y_hat)
                 y_hat_logprob_list.append(y_hat_logprob)
-                y_emb = self.y_in(y_hat[:, 0]) * 0
+                #y_emb = self.y_in(y_hat[:, 0]) * 0
 
         self.y_pre = T.stack(y_pre_list, 1)
         self.p_pre = T.stack(p_pre_list, 1)
