@@ -23,8 +23,8 @@ def build_cnn(**config):
             kernel_size,
             padding=tuple((_ - 1) // 2 for _ in kernel_size),
             )
-        #INIT.xavier_uniform(module.weight)
-        #INIT.constant(module.bias, 0)
+        INIT.xavier_uniform(module.weight)
+        INIT.constant(module.bias, 0)
         cnn_list.append(module)
         if i < len(filters) - 1:
             cnn_list.append(NN.LeakyReLU())
@@ -42,13 +42,8 @@ def build_mlp(**config):
             input_size if i == 0 else layer_sizes[i-1],
             layer_sizes[i],
             )
-        if i == len(layer_sizes) - 1:
-            #INIT.constant(module.weight, 0)
-            pass
-        else:
-            #INIT.xavier_uniform(module.weight)
-            pass
-        #INIT.constant(module.bias, 0)
+        INIT.xavier_uniform(module.weight)
+        INIT.constant(module.bias, 0)
         mlp_list.append(module)
         if i < len(layer_sizes) - 1:
             mlp_list.append(NN.LeakyReLU())
@@ -92,6 +87,8 @@ class SequentialGlimpsedClassifier(NN.Module):
         #INIT.orthogonal(self.lstm.weight_hh)
         #INIT.constant(self.lstm.bias_ih, 0)
         #INIT.constant(self.lstm.bias_hh, 0)
+        #INIT.constant(self.lstm.bias_ih[lstm_dims:2*lstm_dims], 1)
+        #INIT.constant(self.lstm.bias_hh[lstm_dims:2*lstm_dims], 1)
         self.proj_y = build_mlp(input_size=lstm_dims,
                                 layer_sizes=[mlp_dims, n_classes])
         self.proj_p = build_mlp(input_size=lstm_dims,

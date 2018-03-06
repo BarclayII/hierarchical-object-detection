@@ -17,15 +17,17 @@ def gaussian_masks(c, d, s, len_, glim_len):
     # glim_len / 2.  The generated Gaussian attention does not
     # correspond to the actual crop of the bbox.
     # Possibly a bug?
-    R = tovar(T.arange(0, glim_len)).view(1, 1, 1, -1) - glim_len / 2
-    C = tovar(T.arange(0, len_)).view(1, 1, -1, 1)
+    R = tovar(T.arange(0, glim_len).view(1, 1, 1, -1) - glim_len / 2)
+    C = T.arange(0, len_).view(1, 1, -1, 1)
     C = C.expand(batch_size, n_glims, len_, 1)
+    C = tovar(C)
     c = c[:, :, None, None]
     d = d[:, :, None, None]
     s = s[:, :, None, None]
 
     cr = c + R * d
-    sr = tovar(T.ones(cr.size())) * s
+    #sr = tovar(T.ones(cr.size())) * s
+    sr = s
 
     mask = C - cr
     mask = (-0.5 * (mask / sr) ** 2).exp()
