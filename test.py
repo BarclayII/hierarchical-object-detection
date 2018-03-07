@@ -6,10 +6,24 @@ import models
 import losses
 from util import *
 import numpy.random as RNG
-from datasets import MNISTMulti
+from datasets import MNISTMulti, wrap_output
 import numpy as NP
 from timer import Timer
 import argparse
+from functools import partial
+
+batch_size = 128
+ones = T.ones(batch_size, 10).long()
+
+def process_datum(x, _y, B, volatile=False):
+    y = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, _y, ones))
+    x = tovar(x.float() / 255, volatile=volatile)
+    y = tovar(y, volatile=volatile)
+    __y = tovar(_y, volatile=volatile)
+    B = tovar(B, volatile=volatile)
+
+    return x, y, __y, B
+process_datum_valid = partial(process_datum, volatile=True)
 
 def run():
     parser = argparse.ArgumentParser()
@@ -19,14 +33,22 @@ def run():
 
     mnist_train = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70, download=True)
     mnist_valid = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70, download=False, mode='valid')
-    batch_size = 128
-    mnist_train_dataloader = T.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0)
-    mnist_valid_dataloader = T.utils.data.DataLoader(mnist_valid, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0)
+    mnist_train_dataloader = wrap_output(
+            T.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0),
+            process_datum)
+    mnist_valid_dataloader = wrap_output(
+            T.utils.data.DataLoader(mnist_valid, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0),
+            process_datum_valid)
 
-    model = cuda(models.SequentialGlimpsedClassifier(n_max=args.n_max, pre_lstm_filters=[16, 32, 64], lstm_dims=512, mlp_dims=512, n_class_embed_dims=50, glimpse_size=(args.glim_size, args.glim_size)))
+    model = cuda(models.SequentialGlimpsedClassifier(
+        n_max=args.n_max,
+        pre_lstm_filters=[16, 32, 64],
+        lstm_dims=512,
+        mlp_dims=512,
+        n_class_embed_dims=50,
+        glimpse_size=(args.glim_size, args.glim_size)))
     #loss_fn = losses.RLClassifierLoss()
     loss_fn = losses.SupervisedClassifierLoss()
-    ones = T.ones(batch_size, 10).long()
     sgd_gamma = 1
     sgd_lambda = 0.1
 
@@ -38,13 +60,8 @@ def run():
     for epoch in range(100):
         #opt = T.optim.SGD(params, lr=1 / (1 + 1e-1 * epoch))
         opt = T.optim.RMSprop(params, lr=1e-5)
-        for i, (x, _y, B) in enumerate(mnist_train_dataloader):
-            batch_size, n_rows, n_cols = x.size()
-            y = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, _y, ones))
-            x = tovar(x.float() / 255)
-            y = tovar(y)
-            __y = tovar(_y)
-            B = tovar(B)
+        for i, (x, y, __y, B) in enumerate(mnist_train_dataloader):
+            _, n_rows, n_cols = x.size()
             with Timer.new('forward', print_=True):
                 y_hat, y_hat_logprob, p, p_logprob = model(x.unsqueeze(1).expand(batch_size, 3, n_rows, n_cols))
                 loss = loss_fn(__y[:, 0], model.y_pre, model.p_pre)
@@ -70,13 +87,8 @@ def run():
                 print(tonumpy(model.v_B[0]))
 
         total = correct = 0
-        for i, (x, _y, B) in enumerate(mnist_valid_dataloader):
-            batch_size, n_rows, n_cols = x.size()
-            y = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, _y, ones))
-            x = tovar(x.float() / 255, volatile=True)
-            y = tovar(y, volatile=True)
-            __y = tovar(_y, volatile=True)
-            B = tovar(B)
+        for i, (x, y, __y, B) in enumerate(mnist_valid_dataloader):
+            _, n_rows, n_cols = x.size()
             y_hat, y_hat_logprob, p, p_logprob = model(x.unsqueeze(1).expand(batch_size, 3, n_rows, n_cols))
             total += batch_size
             correct += NP.asscalar(tonumpy((__y[:, 0] == model.y_pre.max(-1)[1][:, -1]).sum()))
