@@ -50,6 +50,30 @@ def build_mlp(**config):
 
     return NN.Sequential(*mlp_list)
 
+class CNNClassifier(NN.Module):
+    def __init__(self,
+                 filters=[16, 32, 64, 128, 256],
+                 kernel_size=(3, 3),
+                 final_pool_size=(2, 2),
+                 in_channels=3,
+                 mlp_dims=128,
+                 n_classes=10,
+                 ):
+        NN.Module.__init__(self)
+        self.cnn = build_cnn(
+                filters=filters,
+                kernel_size=kernel_size,
+                final_pool_size=final_pool_size,
+                )
+        self.mlp = build_mlp(
+                input_size=filters[-1] * NP.asscalar(NP.prod(final_pool_size)),
+                layer_sizes=[mlp_dims, n_classes])
+
+    def forward(self, x):
+        self.y_hat = self.mlp(self.cnn(x))
+        self.y_hat_logprob = F.log_softmax(self.y_hat)
+        return self.y_hat_logprob
+
 class SequentialGlimpsedClassifier(NN.Module):
     '''
     The RNN takes the feature maps from image glimpses as inputs for
