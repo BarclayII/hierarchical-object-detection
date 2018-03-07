@@ -11,19 +11,61 @@ import numpy as NP
 from timer import Timer
 import argparse
 from functools import partial
+import solver
 
-batch_size = 128
+batch_size = 64
 ones = T.ones(batch_size, 10).long()
 
-def process_datum(x, _y, B, volatile=False):
-    y = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, _y, ones))
+def process_datum(x, y, B, volatile=False):
+    y_cnt = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, y, ones))
     x = tovar(x.float() / 255, volatile=volatile)
+    y_cnt = tovar(y_cnt, volatile=volatile)
     y = tovar(y, volatile=volatile)
-    __y = tovar(_y, volatile=volatile)
     B = tovar(B, volatile=volatile)
+    _, n_rows, n_cols = x.size()
+    x = x.unsqueeze(1).expand(batch_size, 3, n_rows, n_cols)
 
-    return x, y, __y, B
+    return x, y_cnt, y, B
+
 process_datum_valid = partial(process_datum, volatile=True)
+
+def model_output(solver):
+    x, y_cnt, y, B = solver.datum
+    return solver.model(x)
+
+def train_loss(solver, loss_fn):
+    x, y_cnt, y, B = solver.datum
+    y_hat, y_hat_logprob, p, p_logprob = solver.output
+    loss = loss_fn(y[:, 0], solver.model.y_pre, solver.model.p_pre)
+    return loss
+
+def acc(solver):
+    x, y_cnt, y, B = solver.datum
+    y_hat, y_hat_logprob, p, p_logprob = solver.output
+    return NP.asscalar(tonumpy((y[:, 0] == solver.model.y_pre.max(-1)[1][:, -1]).sum()))
+
+def on_before_step(solver):
+    solver.norm = clip_grad_norm(solver.model_params, 1)
+
+def on_after_train_batch(solver):
+    print(solver.epoch,
+          solver.batch,
+          solver.eval_metric[0],
+          tonumpy(solver.train_loss),
+          tonumpy(solver.norm),
+          max(p.data.max() for p in solver.model_params),
+          min(p.data.min() for p in solver.model_params))
+    print(tonumpy(solver.model.v_B[0]))
+
+def on_before_eval(solver):
+    solver.total = solver.correct = 0
+
+def on_after_eval_batch(solver):
+    solver.total += batch_size
+    solver.correct += solver.eval_metric[0]
+
+def on_after_eval(solver):
+    print(solver.epoch, solver.correct, '/', total)
 
 def run():
     parser = argparse.ArgumentParser()
@@ -53,46 +95,25 @@ def run():
     sgd_lambda = 0.1
 
     params = [p for p in model.parameters() if p.requires_grad]
+    opt = T.optim.RMSprop(params, lr=1e-5)
 
     print(dict(model.named_parameters()).keys())
     print(sum(NP.prod(p.size()) for p in params))
 
-    for epoch in range(100):
-        #opt = T.optim.SGD(params, lr=1 / (1 + 1e-1 * epoch))
-        opt = T.optim.RMSprop(params, lr=1e-5)
-        for i, (x, y, __y, B) in enumerate(mnist_train_dataloader):
-            _, n_rows, n_cols = x.size()
-            with Timer.new('forward', print_=True):
-                y_hat, y_hat_logprob, p, p_logprob = model(x.unsqueeze(1).expand(batch_size, 3, n_rows, n_cols))
-                loss = loss_fn(__y[:, 0], model.y_pre, model.p_pre)
-                reg = sum(p.norm() ** 2 for p in params) * 1e-4
-            opt.zero_grad()
-            with Timer.new('backward', print_=True):
-                #(loss + reg).backward()
-                loss.backward()
-            #norm = 0
-            #for p in params:
-            #    if p.grad is not None:
-            #        norm += p.grad.norm()
-            #        p.grad.data.clamp_(min=-1, max=1)
-            with Timer.new('clip', print_=True):
-                norm = clip_grad_norm(params, 1)
-            opt.step()
-            if i % 1 == 0:
-                #print(epoch, i, tonumpy(loss_fn.r).sum(1).mean(), tonumpy(loss))
-                print(epoch, i, tonumpy((__y[:, 0] == model.y_pre.max(-1)[1][:, -1]).sum()), tonumpy(loss),
-                      tonumpy(reg), tonumpy(norm),
-                      max(p.data.max() for p in params),
-                      min(p.data.min() for p in params))
-                print(tonumpy(model.v_B[0]))
-
-        total = correct = 0
-        for i, (x, y, __y, B) in enumerate(mnist_valid_dataloader):
-            _, n_rows, n_cols = x.size()
-            y_hat, y_hat_logprob, p, p_logprob = model(x.unsqueeze(1).expand(batch_size, 3, n_rows, n_cols))
-            total += batch_size
-            correct += NP.asscalar(tonumpy((__y[:, 0] == model.y_pre.max(-1)[1][:, -1]).sum()))
-        print(epoch, correct, '/', total)
+    train_loss_fn = partial(train_loss, loss_fn=loss_fn)
+    s = solver.Solver(mnist_train_dataloader,
+                      mnist_valid_dataloader,
+                      model,
+                      model_output,
+                      train_loss_fn,
+                      [acc],
+                      opt)
+    s.register_callback('before_step', on_before_step)
+    s.register_callback('after_train_batch', on_after_train_batch)
+    s.register_callback('before_eval', on_before_eval)
+    s.register_callback('after_eval_batch', on_after_eval_batch)
+    s.register_callback('after_eval', on_after_eval)
+    s.run(500)
 
 if __name__ == '__main__':
     run()
