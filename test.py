@@ -13,30 +13,36 @@ import argparse
 from functools import partial
 import solver
 
-batch_size = 128
+batch_size = 64
 ones = T.ones(batch_size, 10).long()
 
-def process_datum(x, _y, B, volatile=False):
-    y = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, _y, ones))
+def process_datum(x, y, B, volatile=False):
+    y_cnt = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, y, ones))
     x = tovar(x.float() / 255, volatile=volatile)
+    y_cnt = tovar(y_cnt, volatile=volatile)
     y = tovar(y, volatile=volatile)
-    __y = tovar(_y, volatile=volatile)
     B = tovar(B, volatile=volatile)
     _, n_rows, n_cols = x.size()
     x = x.unsqueeze(1).expand(batch_size, 3, n_rows, n_cols)
 
-    return x, y, __y, B
+    return x, y_cnt, y, B
 
 process_datum_valid = partial(process_datum, volatile=True)
 
-def train_loss(solver, datum, output, loss_fn):
-    x, y, __y, B = datum
-    loss = loss_fn(__y[:, 0], solver.model.y_pre, solver.model.p_pre)
+def model_output(solver):
+    x, y_cnt, y, B = solver.datum
+    return solver.model(x)
+
+def train_loss(solver, loss_fn):
+    x, y_cnt, y, B = solver.datum
+    y_hat, y_hat_logprob, p, p_logprob = solver.output
+    loss = loss_fn(y[:, 0], solver.model.y_pre, solver.model.p_pre)
     return loss
 
-def acc(solver, datum, output):
-    x, y, __y, B = datum
-    return NP.asscalar(tonumpy((__y[:, 0] == solver.model.y_pre.max(-1)[1][:, -1]).sum()))
+def acc(solver):
+    x, y_cnt, y, B = solver.datum
+    y_hat, y_hat_logprob, p, p_logprob = solver.output
+    return NP.asscalar(tonumpy((y[:, 0] == solver.model.y_pre.max(-1)[1][:, -1]).sum()))
 
 def on_before_step(solver):
     solver.norm = clip_grad_norm(solver.model_params, 1)
@@ -98,9 +104,15 @@ def run():
     s = solver.Solver(mnist_train_dataloader,
                       mnist_valid_dataloader,
                       model,
+                      model_output,
                       train_loss_fn,
                       [acc],
                       opt)
+    s.register_callback('before_step', on_before_step)
+    s.register_callback('after_train_batch', on_after_train_batch)
+    s.register_callback('before_eval', on_before_eval)
+    s.register_callback('after_eval_batch', on_after_eval_batch)
+    s.register_callback('after_eval', on_after_eval)
     s.run(500)
 
 if __name__ == '__main__':

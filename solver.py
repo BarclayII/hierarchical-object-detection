@@ -4,13 +4,15 @@ class Solver(object):
                  dataloader,
                  dataloader_val,
                  model,
+                 output_fn,
                  train_loss_fn,
                  eval_metric_fns,
                  optim):
         self._dataloader = dataloader
         self._dataloader_val = dataloader_val
         self.model = model
-        self.model_params = (p for p in model.parameters() if p.requires_grad)
+        self.model_params = [p for p in model.parameters() if p.requires_grad]
+        self._output_fn = output_fn
         self._train_loss_fn = train_loss_fn
         self._eval_metric_fns = eval_metric_fns
         self.optim = optim
@@ -30,9 +32,9 @@ class Solver(object):
             for i, datum in enumerate(self._dataloader):
                 self.batch = i
                 self.datum = datum
-                self.output = self.model(*self.datum)
-                self.train_loss = self._train_loss_fn(self, self.datum, self.output)
-                self.eval_metric = [f(self, self.datum, self.output) for f in self._eval_metric_fns]
+                self.output = self._output_fn(self)
+                self.train_loss = self._train_loss_fn(self)
+                self.eval_metric = [f(self) for f in self._eval_metric_fns]
                 self.optim.zero_grad()
                 self.train_loss.backward()
                 _ = [callback(self) for callback in self._before_step]
@@ -44,7 +46,10 @@ class Solver(object):
             for i, datum in enumerate(self._dataloader_val):
                 self.batch = i
                 self.datum = datum
-                self.output = self.model
-                self.eval_metric = [f(self, self.datum, self.output) for f in self._eval_metric_fns]
+                self.output = self._output_fn(self)
+                self.eval_metric = [f(self) for f in self._eval_metric_fns]
                 _ = [callback(self) for callback in self._after_eval_batch]
             _ = [callback(self) for callback in self._after_eval]
+
+    def register_callback(self, key, func):
+        getattr(self, '_' + key).append(func)
