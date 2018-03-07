@@ -17,6 +17,7 @@ class Solver(object):
         self._eval_metric_fns = eval_metric_fns
         self.optim = optim
 
+        self._before_run = []
         self._before_epoch = []
         self._before_step = []
         self._after_train_batch = []
@@ -25,6 +26,8 @@ class Solver(object):
         self._after_eval = []
 
     def run(self, max_epoch=100):
+        _ = [callback(self) for callback in self._before_run]
+
         for epoch in range(max_epoch):
             self.epoch = epoch
 

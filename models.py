@@ -70,9 +70,10 @@ class CNNClassifier(NN.Module):
                 layer_sizes=[mlp_dims, n_classes])
 
     def forward(self, x):
-        self.y_hat = self.mlp(self.cnn(x))
-        self.y_hat_logprob = F.log_softmax(self.y_hat)
-        return self.y_hat_logprob
+        batch_size = x.size()[0]
+        self.y_pre = self.mlp(self.cnn(x).view(batch_size, -1))
+        self.y_hat_logprob = F.log_softmax(self.y_pre)
+        return self.y_hat_logprob.exp()
 
 class SequentialGlimpsedClassifier(NN.Module):
     '''

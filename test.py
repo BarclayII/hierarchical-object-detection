@@ -29,20 +29,57 @@ def process_datum(x, y, B, volatile=False):
 
 process_datum_valid = partial(process_datum, volatile=True)
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--n-max', type=int, default=1)
+parser.add_argument('--glim-size', type=int, default=70)
+parser.add_argument('--teacher', action='store_true')
+args = parser.parse_args()
+
+mnist_train = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70, download=True)
+mnist_valid = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70, download=False, mode='valid')
+mnist_train_dataloader = wrap_output(
+        T.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0),
+        process_datum)
+mnist_valid_dataloader = wrap_output(
+        T.utils.data.DataLoader(mnist_valid, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0),
+        process_datum_valid)
+
+if args.teacher:
+    model = cuda(models.CNNClassifier(mlp_dims=512))
+    def train_loss(solver):
+        x, y_cnt, y, B = solver.datum
+        return F.cross_entropy(solver.model.y_pre, y[:, 0])
+
+    def acc(solver):
+        x, y_cnt, y, B = solver.datum
+        return NP.asscalar(tonumpy((y[:, 0] == solver.model.y_pre.max(-1)[1]).sum()))
+
+else:
+    model = cuda(models.SequentialGlimpsedClassifier(
+        n_max=args.n_max,
+        pre_lstm_filters=[16, 32, 64],
+        lstm_dims=512,
+        mlp_dims=512,
+        n_class_embed_dims=50,
+        glimpse_size=(args.glim_size, args.glim_size)))
+    #loss_fn = losses.RLClassifierLoss()
+    loss_fn = losses.SupervisedClassifierLoss()
+    def train_loss(solver):
+        x, y_cnt, y, B = solver.datum
+        loss = loss_fn(y[:, 0], solver.model.y_pre, solver.model.p_pre)
+        return loss
+
+    def acc(solver):
+        x, y_cnt, y, B = solver.datum
+        return NP.asscalar(tonumpy((y[:, 0] == solver.model.y_pre.max(-1)[1][:, -1]).sum()))
+
+
 def model_output(solver):
     x, y_cnt, y, B = solver.datum
     return solver.model(x)
 
-def train_loss(solver, loss_fn):
-    x, y_cnt, y, B = solver.datum
-    y_hat, y_hat_logprob, p, p_logprob = solver.output
-    loss = loss_fn(y[:, 0], solver.model.y_pre, solver.model.p_pre)
-    return loss
-
-def acc(solver):
-    x, y_cnt, y, B = solver.datum
-    y_hat, y_hat_logprob, p, p_logprob = solver.output
-    return NP.asscalar(tonumpy((y[:, 0] == solver.model.y_pre.max(-1)[1][:, -1]).sum()))
+def on_before_run(solver):
+    solver.best_correct = 0
 
 def on_before_step(solver):
     solver.norm = clip_grad_norm(solver.model_params, 1)
@@ -55,7 +92,8 @@ def on_after_train_batch(solver):
           tonumpy(solver.norm),
           max(p.data.max() for p in solver.model_params),
           min(p.data.min() for p in solver.model_params))
-    print(tonumpy(solver.model.v_B[0]))
+    if not args.teacher:
+        print(tonumpy(solver.model.v_B[0]))
 
 def on_before_eval(solver):
     solver.total = solver.correct = 0
@@ -65,32 +103,12 @@ def on_after_eval_batch(solver):
     solver.correct += solver.eval_metric[0]
 
 def on_after_eval(solver):
-    print(solver.epoch, solver.correct, '/', total)
+    print(solver.epoch, solver.correct, '/', solver.total)
+    if solver.correct > solver.best_correct:
+        solver.best_correct = correct
+        T.save(solver.model, solver.save_path)
 
 def run():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--n-max', type=int, default=1)
-    parser.add_argument('--glim-size', type=int, default=70)
-    args = parser.parse_args()
-
-    mnist_train = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70, download=True)
-    mnist_valid = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70, download=False, mode='valid')
-    mnist_train_dataloader = wrap_output(
-            T.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0),
-            process_datum)
-    mnist_valid_dataloader = wrap_output(
-            T.utils.data.DataLoader(mnist_valid, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0),
-            process_datum_valid)
-
-    model = cuda(models.SequentialGlimpsedClassifier(
-        n_max=args.n_max,
-        pre_lstm_filters=[16, 32, 64],
-        lstm_dims=512,
-        mlp_dims=512,
-        n_class_embed_dims=50,
-        glimpse_size=(args.glim_size, args.glim_size)))
-    #loss_fn = losses.RLClassifierLoss()
-    loss_fn = losses.SupervisedClassifierLoss()
     sgd_gamma = 1
     sgd_lambda = 0.1
 
@@ -100,14 +118,15 @@ def run():
     print(dict(model.named_parameters()).keys())
     print(sum(NP.prod(p.size()) for p in params))
 
-    train_loss_fn = partial(train_loss, loss_fn=loss_fn)
     s = solver.Solver(mnist_train_dataloader,
                       mnist_valid_dataloader,
                       model,
                       model_output,
-                      train_loss_fn,
+                      train_loss,
                       [acc],
                       opt)
+    s.save_path = 'teacher.pt' if args.teacher else 'model.pt'
+    s.register_callback('before_run', on_before_run)
     s.register_callback('before_step', on_before_step)
     s.register_callback('after_train_batch', on_after_train_batch)
     s.register_callback('before_eval', on_before_eval)
