@@ -12,8 +12,11 @@ from timer import Timer
 import argparse
 from functools import partial
 
+batch_size = 128
+ones = T.ones(batch_size, 10).long()
+
 def process_datum(x, _y, B, volatile=False):
-    y = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, _y, ones_))
+    y = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, _y, ones))
     x = tovar(x.float() / 255, volatile=volatile)
     y = tovar(y, volatile=volatile)
     __y = tovar(_y, volatile=volatile)
@@ -30,7 +33,6 @@ def run():
 
     mnist_train = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70, download=True)
     mnist_valid = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70, download=False, mode='valid')
-    batch_size = 128
     mnist_train_dataloader = wrap_output(
             T.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0),
             process_datum)
@@ -47,7 +49,6 @@ def run():
         glimpse_size=(args.glim_size, args.glim_size)))
     #loss_fn = losses.RLClassifierLoss()
     loss_fn = losses.SupervisedClassifierLoss()
-    ones = T.ones(batch_size, 10).long()
     sgd_gamma = 1
     sgd_lambda = 0.1
 
@@ -60,7 +61,7 @@ def run():
         #opt = T.optim.SGD(params, lr=1 / (1 + 1e-1 * epoch))
         opt = T.optim.RMSprop(params, lr=1e-5)
         for i, (x, y, __y, B) in enumerate(mnist_train_dataloader):
-            batch_size, n_rows, n_cols = x.size()
+            _, n_rows, n_cols = x.size()
             with Timer.new('forward', print_=True):
                 y_hat, y_hat_logprob, p, p_logprob = model(x.unsqueeze(1).expand(batch_size, 3, n_rows, n_cols))
                 loss = loss_fn(__y[:, 0], model.y_pre, model.p_pre)
@@ -87,7 +88,7 @@ def run():
 
         total = correct = 0
         for i, (x, y, __y, B) in enumerate(mnist_valid_dataloader):
-            batch_size, n_rows, n_cols = x.size()
+            _, n_rows, n_cols = x.size()
             y_hat, y_hat_logprob, p, p_logprob = model(x.unsqueeze(1).expand(batch_size, 3, n_rows, n_cols))
             total += batch_size
             correct += NP.asscalar(tonumpy((__y[:, 0] == model.y_pre.max(-1)[1][:, -1]).sum()))
