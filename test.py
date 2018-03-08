@@ -105,7 +105,7 @@ def on_after_eval_batch(solver):
 def on_after_eval(solver):
     print(solver.epoch, solver.correct, '/', solver.total)
     if solver.correct > solver.best_correct:
-        solver.best_correct = correct
+        solver.best_correct = solver.correct
         T.save(solver.model, solver.save_path)
 
 def run():
