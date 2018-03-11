@@ -100,8 +100,8 @@ class GaussianGlimpse(NN.Module):
         return T.stack(y, -1)
 
     @classmethod
-    def absolute_to_relative(cls, att, relative):
-        C_x, C_y, D_x, D_y, S_x, S_y = T.unbind(relative, -1)
+    def absolute_to_relative(cls, att, absolute):
+        C_x, C_y, D_x, D_y, S_x, S_y = T.unbind(absolute, -1)
         c_x, c_y, d_x, d_y, s_x, s_y = T.unbind(att, -1)
         return T.stack([
             (c_x - C_x) / D_x + 0.5,
@@ -252,6 +252,28 @@ class BilinearGlimpse(NN.Module):
         bilin = by.permute(0, 2, 1) @ x.view(-1, xrow, xcol) @ ax
 
         return bilin.view(nsamples, nglims, nchan, crow, ccol)
+
+    @classmethod
+    def absolute_to_relative(cls, att, absolute):
+        C_x, C_y, D_x, D_y = T.unbind(absolute, -1)
+        c_x, c_y, d_x, d_y = T.unbind(att, -1)
+        return T.stack([
+            (c_x - C_x) / D_x + 0.5,
+            (c_y - C_y) / D_y + 0.5,
+            d_x / D_x,
+            d_y / D_y,
+            ], -1)
+
+    @classmethod
+    def relative_to_absolute(cls, att, relative):
+        C_x, C_y, D_x, D_y = T.unbind(relative, -1)
+        c_x, c_y, d_x, d_y = T.unbind(att, -1)
+        return T.stack([
+            (c_x - 0.5) * D_x + C_x,
+            (c_y - 0.5) * D_y + C_y,
+            d_x * D_x,
+            d_y * D_y,
+            ], -1)
 
 
 glimpse_table = {

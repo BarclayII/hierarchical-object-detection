@@ -18,7 +18,7 @@ class Solver(object):
         self.optim = optim
 
         self._before_run = []
-        self._before_epoch = []
+        self._before_train = []
         self._before_step = []
         self._after_train_batch = []
         self._before_eval = []
@@ -31,6 +31,7 @@ class Solver(object):
         for epoch in range(max_epoch):
             self.epoch = epoch
 
+            _ = [callback(self) for callback in self._before_train]
             self.training = True
             for i, datum in enumerate(self._dataloader):
                 self.batch = i

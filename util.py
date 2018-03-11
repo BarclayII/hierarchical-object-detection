@@ -31,7 +31,7 @@ def reverse(x, dim):
         idx = tovar(idx)
     return x.index_select(dim, idx)
 
-def addbox(ax, b, ec):
+def addbox(ax, b, ec, lw=1):
     import matplotlib.patches as PA
     ax.add_patch(PA.Rectangle((b[0] - b[2] / 2, b[1] - b[3] / 2), b[2], b[3],
-                 ec=ec, fill=False, lw=1))
+                 ec=ec, fill=False, lw=lw))

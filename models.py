@@ -28,6 +28,7 @@ def build_cnn(**config):
         cnn_list.append(module)
         if i < len(filters) - 1:
             cnn_list.append(NN.LeakyReLU())
+            cnn_list.append(NN.Dropout(p=0.5))
     cnn_list.append(NN.AdaptiveMaxPool2d(final_pool_size))
 
     return NN.Sequential(*cnn_list)
@@ -47,6 +48,7 @@ def build_mlp(**config):
         mlp_list.append(module)
         if i < len(layer_sizes) - 1:
             mlp_list.append(NN.LeakyReLU())
+            mlp_list.append(NN.Dropout(p=0.5))
 
     return NN.Sequential(*mlp_list)
 
@@ -185,7 +187,7 @@ class SequentialGlimpsedClassifier(NN.Module):
         self.y_pre = T.stack(y_pre_list, 1)
         self.p_pre = T.stack(p_pre_list, 1)
         self.v_B = T.stack(v_B_list, 1)
-        self.g = T.stack(g, 1)
+        self.g = T.stack(g_list, 1)
         self.y_hat = T.stack(y_hat_list, 1)
         self.y_hat_logprob = T.stack(y_hat_logprob_list, 1)
         self.p = T.stack(p_list, 1)

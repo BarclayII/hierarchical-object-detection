@@ -11,6 +11,8 @@ import numpy as NP
 import argparse
 from functools import partial
 import solver
+from viz import VisdomWindowManager
+import matplotlib.pyplot as PL
 
 batch_size = 64
 ones = T.ones(batch_size, 10).long()
@@ -31,17 +33,20 @@ process_datum_valid = partial(process_datum, volatile=True)
 parser = argparse.ArgumentParser()
 parser.add_argument('--n-max', type=int, default=1)
 parser.add_argument('--glim-size', type=int, default=70)
+parser.add_argument('--image-size', type=int, default=70)
 parser.add_argument('--teacher', action='store_true')
 args = parser.parse_args()
 
-mnist_train = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70, download=True)
-mnist_valid = MNISTMulti('.', n_digits=1, backrand=128, image_rows=70, image_cols=70, download=False, mode='valid')
+mnist_train = MNISTMulti('.', n_digits=1, backrand=0, image_rows=args.image_size, image_cols=args.image_size, download=True)
+mnist_valid = MNISTMulti('.', n_digits=1, backrand=0, image_rows=args.image_size, image_cols=args.image_size, download=False, mode='valid')
 mnist_train_dataloader = wrap_output(
         T.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0),
         process_datum)
 mnist_valid_dataloader = wrap_output(
         T.utils.data.DataLoader(mnist_valid, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0),
         process_datum_valid)
+
+wm = VisdomWindowManager()
 
 if args.teacher:
     model = cuda(models.CNNClassifier(mlp_dims=512))
@@ -60,6 +65,7 @@ else:
         lstm_dims=512,
         mlp_dims=512,
         n_class_embed_dims=50,
+        relative_previous=False,
         glimpse_size=(args.glim_size, args.glim_size)))
     #loss_fn = losses.RLClassifierLoss()
     loss_fn = losses.SupervisedClassifierLoss()
@@ -80,6 +86,9 @@ def model_output(solver):
 def on_before_run(solver):
     solver.best_correct = 0
 
+def on_before_train(solver):
+    pass
+
 def on_before_step(solver):
     solver.norm = clip_grad_norm(solver.model_params, 1)
 
@@ -96,10 +105,23 @@ def on_after_train_batch(solver):
 
 def on_before_eval(solver):
     solver.total = solver.correct = 0
+    solver.nviz = 10
 
 def on_after_eval_batch(solver):
     solver.total += batch_size
     solver.correct += solver.eval_metric[0]
+
+    if solver.nviz > 0:
+        solver.nviz -= 1
+        fig, ax = PL.subplots(2, 3)
+        x, _, _, B = solver.datum
+        ax[0, 0].imshow(tonumpy(x[0].permute(1, 2, 0)))
+        addbox(ax[0, 0], tonumpy(B[0, 0]), 'red')
+        v_B = tonumpy(solver.model.v_B)
+        for i in range(args.n_max):
+            addbox(ax[0, 0], tonumpy(v_B[0, i, :4] * args.image_size), 'yellow', i+1)
+            ax[(i+1)//3, (i+1)%3].imshow(tonumpy(solver.model.g[0, i].permute(1, 2, 0)))
+        wm.display_mpl_figure(fig, win='viz{}'.format(solver.nviz))
 
 def on_after_eval(solver):
     print(solver.epoch, solver.correct, '/', solver.total)
@@ -108,11 +130,8 @@ def on_after_eval(solver):
         T.save(solver.model, solver.save_path)
 
 def run():
-    sgd_gamma = 1
-    sgd_lambda = 0.1
-
     params = [p for p in model.parameters() if p.requires_grad]
-    opt = T.optim.RMSprop(params, lr=1e-5)
+    opt = T.optim.RMSprop(params, lr=1e-4)
 
     print(dict(model.named_parameters()).keys())
     print(sum(NP.prod(p.size()) for p in params))
@@ -126,6 +145,7 @@ def run():
                       opt)
     s.save_path = 'teacher.pt' if args.teacher else 'model.pt'
     s.register_callback('before_run', on_before_run)
+    s.register_callback('before_train', on_before_train)
     s.register_callback('before_step', on_before_step)
     s.register_callback('after_train_batch', on_after_train_batch)
     s.register_callback('before_eval', on_before_eval)
