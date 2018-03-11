@@ -187,9 +187,76 @@ class GaussianGlimpse(NN.Module):
         ap = T.stack([cx, cy, dx, dy, sx, sy], -1)
         return ap
 
+class BilinearGlimpse(NN.Module):
+    att_params = 4
+
+    def __init__(self, glim_size):
+        NN.Module.__init__(self)
+        self.glim_size = glim_size
+
+    @classmethod
+    def full(cls):
+        return tovar([0.5, 0.5, 1, 1])
+
+    @classmethod
+    def rescale(cls, x):
+        y = [
+                F.sigmoid(x[..., 0]),    # cx
+                F.sigmoid(x[..., 1]),    # cy
+                #F.softplus(x[..., 2]) / softplus_zero,   #dx
+                #F.softplus(x[..., 3]) / softplus_zero,   #dy
+                F.sigmoid(x[..., 2]) * 2,
+                F.sigmoid(x[..., 3]) * 2,
+                #x[..., 2].exp(),
+                #x[..., 3].exp(),
+                ]
+        return T.stack(y, -1)
+
+    def forward(self, x, spatial_att):
+        '''
+        x: 4D Tensor (batch_size, nchannels, n_image_rows, n_image_cols)
+        spatial_att: 3D Tensor (batch_size, n_glims, att_params) relative scales
+        '''
+        nsamples, nchan, xrow, xcol = x.size()
+        nglims = spatial_att.size()[1]
+        x = x[:, None].contiguous()
+        crow, ccol = self.glim_size
+
+        cx, cy, w, h = T.unbind(spatial_att, -1)
+        cx = cx * xcol
+        cy = cy * xrow
+        w = w * xcol
+        h = h * xrow
+
+        dx = w / (ccol - 1)
+        dy = h / (crow - 1)
+
+        cx = cx[:, :, None]
+        cy = cy[:, :, None]
+        dx = dx[:, :, None]
+        dy = dy[:, :, None]
+
+        mx = cx + dx * (tovar(T.arange(ccol))[None, None, :] - (ccol - 1) / 2)
+        my = cy + dy * (tovar(T.arange(crow))[None, None, :] - (crow - 1) / 2)
+
+        a = tovar(T.arange(xcol))
+        b = tovar(T.arange(xrow))
+
+        ax = (1 - T.abs(a.view(1, 1, -1, 1) - mx[:, :, None, :])).clamp(min=0)
+        ax = ax[:, :, None, :, :]
+        ax = ax.expand(nsamples, nglims, nchan, xcol, ccol).contiguous().view(-1, xcol, ccol)
+        by = (1 - T.abs(b.view(1, 1, -1, 1) - my[:, :, None, :])).clamp(min=0)
+        by = by[:, :, None, :, :]
+        by = by.expand(nsamples, nglims, nchan, xrow, crow).contiguous().view(-1, xrow, crow)
+
+        bilin = by.permute(0, 2, 1) @ x.view(-1, xrow, xcol) @ ax
+
+        return bilin.view(nsamples, nglims, nchan, crow, ccol)
+
 
 glimpse_table = {
         'gaussian': GaussianGlimpse,
+        'bilinear': BilinearGlimpse,
         }
 def create_glimpse(name, size):
     return glimpse_table[name](size)

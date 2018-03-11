@@ -90,7 +90,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                  mlp_dims=128,
                  n_classes=10,
                  n_class_embed_dims=10,
-                 glimpse_type='gaussian',
+                 glimpse_type='bilinear',
                  glimpse_size=(10, 10),
                  relative_previous=False,
                  ):
@@ -192,3 +192,9 @@ class SequentialGlimpsedClassifier(NN.Module):
         self.p_logprob = T.stack(p_logprob_list, 1)
 
         return self.y_hat, self.y_hat_logprob, self.p, self.p_logprob
+
+
+class StepwiseTaughtClassifier(NN.Module):
+    def __init__(self, student, teacher):
+        self.student = student
+        self.teacher = teacher

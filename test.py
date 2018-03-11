@@ -8,7 +8,6 @@ from util import *
 import numpy.random as RNG
 from datasets import MNISTMulti, wrap_output
 import numpy as NP
-from timer import Timer
 import argparse
 from functools import partial
 import solver
@@ -57,7 +56,7 @@ if args.teacher:
 else:
     model = cuda(models.SequentialGlimpsedClassifier(
         n_max=args.n_max,
-        pre_lstm_filters=[16, 32, 64],
+        pre_lstm_filters=[5, 5, 10],
         lstm_dims=512,
         mlp_dims=512,
         n_class_embed_dims=50,
