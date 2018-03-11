@@ -6,14 +6,12 @@ import copy
 from util import *
 
 class RLClassifierLoss(NN.Module):
-    def __init__(self, correct=1, incorrect=-1, gamma=1, ewma=0.7,
-                 force_last_prediction=True):
+    def __init__(self, correct=1, incorrect=-1, gamma=1, ewma=0.7):
         NN.Module.__init__(self)
         self.correct = correct
         self.incorrect = incorrect
         self.gamma = gamma
         self.ewma = ewma
-        self.force_last_prediction = force_last_prediction
 
     def forward(self, y, y_hat, log_y_hat, p, log_p):
         '''
@@ -21,8 +19,6 @@ class RLClassifierLoss(NN.Module):
         '''
         y = y.clone()
         pb = p.byte()
-        if self.force_last_prediction:
-            pb[:, -1] = (pb[:, :-1].sum(1) == 0)
         r_list = []
         log_prob_list = []
         n_steps = y_hat.size()[1]
@@ -30,10 +26,11 @@ class RLClassifierLoss(NN.Module):
         for t in range(n_steps):
             right = ((y.gather(1, y_hat[:, t]) > 0) & pb[:, t]).float()
             wrong = ((y.gather(1, y_hat[:, t]) == 0) & pb[:, t]).float()
+            none = (y_hat.sum(1) == 0).float()
             y_pred = y.clone().zero_()
             y_pred.scatter_add_(1, y_hat[:, t], T.ones_like(y_pred))
             y = (y - y_pred).clamp(min=0)
-            r_list.append(right * self.correct + wrong * self.incorrect)
+            r_list.append(right * self.correct + (wrong + none) * self.incorrect)
 
         r = T.stack(r_list, 1)
 

@@ -62,6 +62,7 @@ class MNISTMulti(Dataset):
                  image_rows=100,
                  image_cols=100,
                  n_digits=1,
+                 size_multiplier=1,
                  backrand=0):
         self.mode = mode
         self.image_rows = image_rows
@@ -106,7 +107,7 @@ class MNISTMulti(Dataset):
                 labels = T.LongTensor(n_new_samples, n_digits).zero_()
                 locs = T.LongTensor(n_new_samples, n_digits, 4).zero_()
 
-                for i, j in product(range(n_digits), range(n_digits)):
+                for i, j in product(range(n_digits), range(n_digits * size_multiplier)):
                     pos_rows = (T.LongTensor(n_samples).random_() %
                                 (image_rows - n_rows))
                     pos_cols = (T.LongTensor(n_samples).random_() %
