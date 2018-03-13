@@ -35,10 +35,14 @@ parser.add_argument('--n-max', type=int, default=1)
 parser.add_argument('--glim-size', type=int, default=70)
 parser.add_argument('--image-size', type=int, default=70)
 parser.add_argument('--teacher', action='store_true')
+parser.add_argument('--env', type=str, default='main')
+parser.add_argument('--backnoise', type=int, default=0)
 args = parser.parse_args()
 
-mnist_train = MNISTMulti('.', n_digits=1, backrand=0, image_rows=args.image_size, image_cols=args.image_size, download=True)
-mnist_valid = MNISTMulti('.', n_digits=1, backrand=0, image_rows=args.image_size, image_cols=args.image_size, download=False, mode='valid')
+mnist_train = MNISTMulti('.', n_digits=1, backrand=args.backnoise,
+        image_rows=args.image_size, image_cols=args.image_size, download=True)
+mnist_valid = MNISTMulti('.', n_digits=1, backrand=args.backnoise,
+        image_rows=args.image_size, image_cols=args.image_size, download=False, mode='valid')
 mnist_train_dataloader = wrap_output(
         T.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0),
         process_datum)
@@ -46,7 +50,7 @@ mnist_valid_dataloader = wrap_output(
         T.utils.data.DataLoader(mnist_valid, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0),
         process_datum_valid)
 
-wm = VisdomWindowManager()
+wm = VisdomWindowManager(env=args.env)
 
 if args.teacher:
     model = cuda(models.CNNClassifier(mlp_dims=512))
