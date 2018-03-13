@@ -37,6 +37,7 @@ parser.add_argument('--image-size', type=int, default=70)
 parser.add_argument('--teacher', action='store_true')
 parser.add_argument('--env', type=str, default='main')
 parser.add_argument('--backnoise', type=int, default=0)
+parser.add_argument('--glim-type', type=str, default='gaussian')
 args = parser.parse_args()
 
 mnist_train = MNISTMulti('.', n_digits=1, backrand=args.backnoise,
@@ -70,7 +71,8 @@ else:
         mlp_dims=512,
         n_class_embed_dims=50,
         relative_previous=False,
-        glimpse_size=(args.glim_size, args.glim_size)))
+        glimpse_size=(args.glim_size, args.glim_size),
+        glimpse_type=args.glim_type))
     #loss_fn = losses.RLClassifierLoss()
     loss_fn = losses.SupervisedClassifierLoss()
     def train_loss(solver):
