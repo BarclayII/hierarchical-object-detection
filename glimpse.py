@@ -80,24 +80,50 @@ class GaussianGlimpse(NN.Module):
         return tovar([0.5, 0.5, 1, 1, 0.5, 0.5])
 
     @classmethod
-    def rescale(cls, x):
-        y = [
-                F.sigmoid(x[..., 0]),    # cx
-                F.sigmoid(x[..., 1]),    # cy
-                #F.softplus(x[..., 2]) / softplus_zero,   #dx
-                #F.softplus(x[..., 3]) / softplus_zero,   #dy
-                #F.softplus(x[..., 4]) / softplus_zero * 0.5, # sx
-                #F.softplus(x[..., 5]) / softplus_zero * 0.5, # sy
-                F.sigmoid(x[..., 2]) * 2,
-                F.sigmoid(x[..., 3]) * 2,
-                F.sigmoid(x[..., 4]),
-                F.sigmoid(x[..., 5]),
-                #x[..., 2].exp(),
-                #x[..., 3].exp(),
-                #x[..., 4].exp() * 0.5,
-                #x[..., 5].exp() * 0.5,
-                ]
-        return T.stack(y, -1)
+    def rescale(cls, x, glimpse_sample):
+        if not glimpse_sample:
+            y = [
+                    F.sigmoid(x[..., 0]),    # cx
+                    F.sigmoid(x[..., 1]),    # cy
+                    F.sigmoid(x[..., 2]) * 2,
+                    F.sigmoid(x[..., 3]) * 2,
+                    F.sigmoid(x[..., 4]),
+                    F.sigmoid(x[..., 5]),
+                    ]
+            diag_logprob = 0
+        else:
+            y = [
+                    F.sigmoid(x[..., 0]),    # cx
+                    F.sigmoid(x[..., 1]),    # cy
+                    F.sigmoid(x[..., 2]) * 2,
+                    F.sigmoid(x[..., 3]) * 2,
+                    x[..., 4],
+                    x[..., 5],
+                    ]
+            diag = T.stack([
+                y[0] - y[2] / 2
+                y[0] + y[2] / 2
+                y[1] - y[3] / 2
+                y[1] + y[3] / 2
+                ], -1)
+            diagN = T.distributions.Normal(
+                    diag, tovar(T.ones_like(diag)) * 0.1)
+            diag = diagN.sample()
+            diag_logprob = diagN.log_prob(diagN)
+
+            s = T.stack([y[4], y[5]], -1)
+            sSN = SigmoidNormal(s, tovar(T.ones_like(s)) * 0.1)
+            s = sSN.sample()
+            s_logprob = sSN.log_prob(s)
+            y = [
+                    (diag[..., 0] + diag[..., 2]) / 2,
+                    (diag[..., 1] + diag[..., 3]) / 2,
+                    diag[..., 2] - diag[..., 0],
+                    diag[..., 3] - diag[..., 1],
+                    s[..., 0],
+                    s[..., 1],
+                    ]
+        return T.stack(y, -1), T.cat([diag_logprob, s_logprob], -1)
 
     @classmethod
     def absolute_to_relative(cls, att, absolute):
@@ -199,7 +225,7 @@ class BilinearGlimpse(NN.Module):
         return tovar([0.5, 0.5, 1, 1])
 
     @classmethod
-    def rescale(cls, x):
+    def rescale(cls, x, glimpse_sample):
         y = [
                 F.sigmoid(x[..., 0]),    # cx
                 F.sigmoid(x[..., 1]),    # cy
@@ -210,7 +236,26 @@ class BilinearGlimpse(NN.Module):
                 #x[..., 2].exp(),
                 #x[..., 3].exp(),
                 ]
-        return T.stack(y, -1)
+        if glimpse_sample:
+            diag = T.stack([
+                y[0] - y[2] / 2
+                y[0] + y[2] / 2
+                y[1] - y[3] / 2
+                y[1] + y[3] / 2
+                ], -1)
+            diagN = T.distributions.Normal(
+                    diag, tovar(T.ones_like(diag)) * 0.1)
+            diag = diagN.sample()
+            diag_logprob = diagN.log_prob(diagN)
+            y = [
+                    (diag[..., 0] + diag[..., 2]) / 2,
+                    (diag[..., 1] + diag[..., 3]) / 2,
+                    diag[..., 2] - diag[..., 0],
+                    diag[..., 3] - diag[..., 1],
+                    ]
+        else:
+            diag_logprob = 0
+        return T.stack(y, -1), diag_logprob
 
     def forward(self, x, spatial_att):
         '''

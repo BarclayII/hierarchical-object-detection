@@ -93,6 +93,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                  glimpse_type='gaussian',
                  glimpse_size=(10, 10),
                  relative_previous=False,
+                 glimpse_sample=False,
                  ):
         NN.Module.__init__(self)
         self.glimpse = create_glimpse(glimpse_type, glimpse_size)
@@ -126,6 +127,7 @@ class SequentialGlimpsedClassifier(NN.Module):
         self.lstm_dims = lstm_dims
         self.n_classes = n_classes
         self.n_class_embed_dims = n_class_embed_dims
+        self.glimpse_sample = glimpse_sample
 
         self.relative_previous = relative_previous
 
@@ -137,12 +139,14 @@ class SequentialGlimpsedClassifier(NN.Module):
 
         v_B = (self.glimpse.full().unsqueeze(0)
                .expand(batch_size, self.glimpse.att_params))
+        v_B_logprob = tovar(T.zeros_like(v_B))
         y_emb = tovar(T.zeros(batch_size, self.n_class_embed_dims))
         s = self.lstm.zero_state(batch_size)
 
         y_pre_list = []
         p_pre_list = []
         v_B_list = []
+        v_B_logprob_list = []
         g_list = []
         y_hat_list = []
         y_hat_logprob_list = []
@@ -151,6 +155,7 @@ class SequentialGlimpsedClassifier(NN.Module):
 
         for t in range(self.n_max):
             v_B_list.append(v_B)
+            v_B_logprob_list.append(v_B_logprob)
             g = self.glimpse(x, v_B[:, None])[:, 0]
             v_s = self.cnn(g).view(batch_size, -1)
             in_ = T.cat([v_s, y_emb, v_B], 1)
@@ -158,7 +163,8 @@ class SequentialGlimpsedClassifier(NN.Module):
             y_pre = self.proj_y(h)
             p_pre = self.proj_p(h)
             v_B_pre = self.proj_B(h)
-            v_B_pre = self.glimpse.rescale(v_B_pre)
+            v_B_pre, v_B_logprob = self.glimpse.rescale(
+                    v_B_pre, self.glimpse_sample)
 
             if self.relative_previous:
                 v_B = self.glimpse.relative_to_absolute(v_B_pre, v_B)
@@ -185,6 +191,7 @@ class SequentialGlimpsedClassifier(NN.Module):
         self.y_pre = T.stack(y_pre_list, 1)
         self.p_pre = T.stack(p_pre_list, 1)
         self.v_B = T.stack(v_B_list, 1)
+        self.v_B_logprob = T.stack(v_B_logprob_list, 1)
         self.g = T.stack(g_list, 1)
         self.y_hat = T.stack(y_hat_list, 1)
         self.y_hat_logprob = T.stack(y_hat_logprob_list, 1)
@@ -192,9 +199,3 @@ class SequentialGlimpsedClassifier(NN.Module):
         self.p_logprob = T.stack(p_logprob_list, 1)
 
         return self.y_hat, self.y_hat_logprob, self.p, self.p_logprob
-
-
-class StepwiseTaughtClassifier(NN.Module):
-    def __init__(self, student, teacher):
-        self.student = student
-        self.teacher = teacher

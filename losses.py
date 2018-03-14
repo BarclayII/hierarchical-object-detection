@@ -13,7 +13,7 @@ class RLClassifierLoss(NN.Module):
         self.gamma = gamma
         self.ewma = ewma
 
-    def forward(self, y, y_hat, log_y_hat, p, log_p):
+    def forward(self, y, y_hat, log_y_hat, p, log_p, v_B, log_v_B):
         '''
         y: (batch_size, n_classes) LongTensor, counts
         '''
@@ -40,7 +40,7 @@ class RLClassifierLoss(NN.Module):
         gamma = self.gamma ** tovar(
                 T.arange(n_steps)[None, :, None].expand_as(r))
         self.q = reverse(reverse(gamma * (r - self.b), 1).cumsum(1), 1)
-        self.logprob = log_p + pb.float() * log_y_hat
+        self.logprob = log_p + pb.float() * log_y_hat + log_v_B.mean(-1)
 
         loss = -(self.logprob * self.q).mean()
         return loss

@@ -38,6 +38,7 @@ parser.add_argument('--teacher', action='store_true')
 parser.add_argument('--env', type=str, default='main')
 parser.add_argument('--backnoise', type=int, default=0)
 parser.add_argument('--glim-type', type=str, default='gaussian')
+parser.add_argument('--loss', type=str, default='supervised')
 args = parser.parse_args()
 
 mnist_train = MNISTMulti('.', n_digits=1, backrand=args.backnoise,
@@ -73,11 +74,19 @@ else:
         relative_previous=False,
         glimpse_size=(args.glim_size, args.glim_size),
         glimpse_type=args.glim_type))
-    #loss_fn = losses.RLClassifierLoss()
-    loss_fn = losses.SupervisedClassifierLoss()
+
+    if args.loss == 'supervised':
+        loss_fn = losses.SupervisedClassifierLoss()
+    elif args.loss == 'reinforce':
+        loss_fn = losses.RLClassifierLoss()
+
     def train_loss(solver):
         x, y_cnt, y, B = solver.datum
-        loss = loss_fn(y[:, 0], solver.model.y_pre, solver.model.p_pre)
+        if args.loss == 'supervised':
+            loss = loss_fn(y[:, 0], solver.model.y_pre, solver.model.p_pre)
+        elif args.loss == 'reinforce':
+            loss = loss_fn(y, solver.y_hat, solver.y_hat_logprob,
+                    solver.p, solver.p_logprob, solver.v_B, solver.v_B_logprob)
         return loss
 
     def acc(solver):
