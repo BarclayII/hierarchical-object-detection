@@ -93,7 +93,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                  glimpse_type='gaussian',
                  glimpse_size=(10, 10),
                  relative_previous=False,
-                 glimpse_sample=False,
+                 glimpse_sample=True,
                  ):
         NN.Module.__init__(self)
         self.glimpse = create_glimpse(glimpse_type, glimpse_size)
@@ -139,7 +139,7 @@ class SequentialGlimpsedClassifier(NN.Module):
 
         v_B = (self.glimpse.full().unsqueeze(0)
                .expand(batch_size, self.glimpse.att_params))
-        v_B_logprob = tovar(T.zeros_like(v_B))
+        v_B_logprob = T.zeros_like(v_B)
         y_emb = tovar(T.zeros(batch_size, self.n_class_embed_dims))
         s = self.lstm.zero_state(batch_size)
 

@@ -4,6 +4,7 @@ import torch.nn as NN
 import torch.nn.functional as F
 import copy
 from util import *
+from models import build_mlp
 
 class RLClassifierLoss(NN.Module):
     def __init__(self, correct=1, incorrect=-1, gamma=1, ewma=0.7):
@@ -54,17 +55,18 @@ class HybridClassifierLoss(NN.Module):
         self.opt = T.optim.Adam(self.critic.parameters())
 
     def forward(self, model, y):
-        batch_size, nsteps, _ = model.h.size()
-        y_loss = F.cross_entropy(model.y_pre[:, -1], y)
+        batch_size, n_steps, state_size = model.h.size()
+        y_loss = F.cross_entropy(model.y_pre[:, -1], y[:, 0])
+        h = model.h.detach()
 
-        b = self.critic(model.h.view(-1, state_size)).view(batch_size, nsteps)
+        b = self.critic(h.view(-1, state_size)).view(batch_size, n_steps)
         r_list = []
 
         for t in range(n_steps):
             if t != n_steps - 1:
                 r = tovar(T.zeros(batch_size))
             else:
-                r = (model.y_hat == y) * self.correct
+                r = (model.y_hat[:, t, 0] == y[:, 0]).float() * self.correct
             r_list.append(r)
 
         r = T.stack(r_list, 1)
@@ -72,11 +74,12 @@ class HybridClassifierLoss(NN.Module):
         # Only count the last step
         b_loss = ((r[:, -1] - b[:, -1]) ** 2).mean()
 
-        v_B_loss = -(r - b) * self.v_B_logprob.mean(-1).mean(-1)
+        v_B_loss = -(r[:, -1] - b[:, -1]) * model.v_B_logprob.mean(-1).mean(-1)
+        v_B_loss = v_B_loss.mean()
 
         if self.training:
             self.opt.zero_grad()
-            b_loss.backward()
+            b_loss.backward(retain_graph=True)
             self.opt.step()
 
         return y_loss + v_B_loss

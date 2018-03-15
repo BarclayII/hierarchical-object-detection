@@ -3,6 +3,7 @@ import torch as T
 import torch.nn.functional as F
 import torch.nn as NN
 from util import *
+from distributions import LogNormal, SigmoidNormal
 
 def gaussian_masks(c, d, s, len_, glim_len):
     '''
@@ -90,7 +91,7 @@ class GaussianGlimpse(NN.Module):
                     F.sigmoid(x[..., 4]),
                     F.sigmoid(x[..., 5]),
                     ]
-            diag_logprob = 0
+            logprob = 0
         else:
             y = [
                     F.sigmoid(x[..., 0]),    # cx
@@ -101,18 +102,18 @@ class GaussianGlimpse(NN.Module):
                     x[..., 5],
                     ]
             diag = T.stack([
-                y[0] - y[2] / 2
-                y[0] + y[2] / 2
-                y[1] - y[3] / 2
-                y[1] + y[3] / 2
+                y[0] - y[2] / 2,
+                y[0] + y[2] / 2,
+                y[1] - y[3] / 2,
+                y[1] + y[3] / 2,
                 ], -1)
             diagN = T.distributions.Normal(
-                    diag, tovar(T.ones_like(diag)) * 0.1)
+                    diag, T.ones_like(diag) * 0.1)
             diag = diagN.sample()
-            diag_logprob = diagN.log_prob(diagN)
+            diag_logprob = diagN.log_prob(diag)
 
             s = T.stack([y[4], y[5]], -1)
-            sSN = SigmoidNormal(s, tovar(T.ones_like(s)) * 0.1)
+            sSN = SigmoidNormal(s, T.ones_like(s) * 0.1)
             s = sSN.sample()
             s_logprob = sSN.log_prob(s)
             y = [
@@ -123,7 +124,8 @@ class GaussianGlimpse(NN.Module):
                     s[..., 0],
                     s[..., 1],
                     ]
-        return T.stack(y, -1), T.cat([diag_logprob, s_logprob], -1)
+            logprob = T.cat([diag_logprob, s_logprob], -1)
+        return T.stack(y, -1), logprob
 
     @classmethod
     def absolute_to_relative(cls, att, absolute):
@@ -238,15 +240,15 @@ class BilinearGlimpse(NN.Module):
                 ]
         if glimpse_sample:
             diag = T.stack([
-                y[0] - y[2] / 2
-                y[0] + y[2] / 2
-                y[1] - y[3] / 2
-                y[1] + y[3] / 2
+                y[0] - y[2] / 2,
+                y[0] + y[2] / 2,
+                y[1] - y[3] / 2,
+                y[1] + y[3] / 2,
                 ], -1)
             diagN = T.distributions.Normal(
-                    diag, tovar(T.ones_like(diag)) * 0.1)
+                    diag, T.ones_like(diag) * 0.1)
             diag = diagN.sample()
-            diag_logprob = diagN.log_prob(diagN)
+            diag_logprob = diagN.log_prob(diag)
             y = [
                     (diag[..., 0] + diag[..., 2]) / 2,
                     (diag[..., 1] + diag[..., 3]) / 2,

@@ -84,9 +84,8 @@ else:
         x, y_cnt, y, B = solver.datum
         if args.loss == 'supervised':
             loss = loss_fn(y[:, 0], solver.model.y_pre, solver.model.p_pre)
-        elif args.loss == 'reinforce':
-            loss = loss_fn(y, solver.y_hat, solver.y_hat_logprob,
-                    solver.p, solver.p_logprob, solver.v_B, solver.v_B_logprob)
+        elif args.loss == 'hybrid':
+            loss = loss_fn(solver.model, y)
         return loss
 
     def acc(solver):
