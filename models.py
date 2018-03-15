@@ -144,6 +144,7 @@ class SequentialGlimpsedClassifier(NN.Module):
         s = self.lstm.zero_state(batch_size)
 
         y_pre_list = []
+        h_list = []
         p_pre_list = []
         v_B_list = []
         v_B_logprob_list = []
@@ -160,6 +161,7 @@ class SequentialGlimpsedClassifier(NN.Module):
             v_s = self.cnn(g).view(batch_size, -1)
             in_ = T.cat([v_s, y_emb, v_B], 1)
             h, s = self.lstm(in_, s)
+            h_list.append(h)
             y_pre = self.proj_y(h)
             p_pre = self.proj_p(h)
             v_B_pre = self.proj_B(h)
@@ -188,6 +190,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                 y_hat_logprob_list.append(y_hat_logprob)
                 #y_emb = self.y_in(y_hat[:, 0]) * 0
 
+        self.h = T.stack(h_list, 1)
         self.y_pre = T.stack(y_pre_list, 1)
         self.p_pre = T.stack(p_pre_list, 1)
         self.v_B = T.stack(v_B_list, 1)

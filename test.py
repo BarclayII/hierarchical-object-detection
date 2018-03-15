@@ -77,8 +77,8 @@ else:
 
     if args.loss == 'supervised':
         loss_fn = losses.SupervisedClassifierLoss()
-    elif args.loss == 'reinforce':
-        loss_fn = losses.RLClassifierLoss()
+    elif args.loss == 'hybrid':
+        loss_fn = losses.HybridClassifierLoss(state_size=512)  # same as LSTM
 
     def train_loss(solver):
         x, y_cnt, y, B = solver.datum

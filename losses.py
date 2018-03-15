@@ -45,6 +45,42 @@ class RLClassifierLoss(NN.Module):
         loss = -(self.logprob * self.q).mean()
         return loss
 
+class HybridClassifierLoss(NN.Module):
+    def __init__(self, state_size=128, correct=1, gamma=1, ewma=0.7):
+        NN.Module.__init__(self)
+        self.correct = correct
+        self.critic = build_mlp(input_size=state_size,
+                                layer_sizes=[state_size, 1])
+        self.opt = T.optim.Adam(self.critic.parameters())
+
+    def forward(self, model, y):
+        batch_size, nsteps, _ = model.h.size()
+        y_loss = F.cross_entropy(model.y_pre[:, -1], y)
+
+        b = self.critic(model.h.view(-1, state_size)).view(batch_size, nsteps)
+        r_list = []
+
+        for t in range(n_steps):
+            if t != n_steps - 1:
+                r = tovar(T.zeros(batch_size))
+            else:
+                r = (model.y_hat == y) * self.correct
+            r_list.append(r)
+
+        r = T.stack(r_list, 1)
+
+        # Only count the last step
+        b_loss = ((r[:, -1] - b[:, -1]) ** 2).mean()
+
+        v_B_loss = -(r - b) * self.v_B_logprob.mean(-1).mean(-1)
+
+        if self.training:
+            self.opt.zero_grad()
+            b_loss.backward()
+            self.opt.step()
+
+        return y_loss + v_B_loss
+
 class SupervisedClassifierLoss(NN.Module):
     def forward(self, y, y_pre, p_pre):
         y_loss = F.cross_entropy(y_pre[:, -1], y)
