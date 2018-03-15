@@ -103,8 +103,8 @@ class GaussianGlimpse(NN.Module):
                     ]
             diag = T.stack([
                 y[0] - y[2] / 2,
-                y[0] + y[2] / 2,
                 y[1] - y[3] / 2,
+                y[0] + y[2] / 2,
                 y[1] + y[3] / 2,
                 ], -1)
             diagN = T.distributions.Normal(
