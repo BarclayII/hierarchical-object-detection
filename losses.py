@@ -47,12 +47,17 @@ class RLClassifierLoss(NN.Module):
         return loss
 
 class HybridClassifierLoss(NN.Module):
-    def __init__(self, state_size=128, correct=1, gamma=1, ewma=0.7):
+    def __init__(self, state_size=128, correct=1, gamma=1, ewma=0.7, input_size=(3, 70, 70), teacher=None):
         NN.Module.__init__(self)
         self.correct = correct
-        self.critic = build_mlp(input_size=state_size,
-                                layer_sizes=[state_size, 1])
+        self.critic = cuda(build_mlp(input_size=state_size,
+                                     layer_sizes=[state_size, 1]))
         self.opt = T.optim.Adam(self.critic.parameters())
+        self.input_size = input_size
+        self.teacher = teacher
+        self.gamma = gamma
+        for p in teacher.parameters():
+            p.requires_grad = False
 
     def forward(self, model, y):
         batch_size, n_steps, state_size = model.h.size()
@@ -61,26 +66,47 @@ class HybridClassifierLoss(NN.Module):
 
         b = self.critic(h.view(-1, state_size)).view(batch_size, n_steps)
         r_list = []
+        m_list = []
+        m = tovar(T.zeros(batch_size, *self.input_size))
 
         for t in range(n_steps):
             if t != n_steps - 1:
-                r = tovar(T.zeros(batch_size))
+                if self.teacher is None:
+                    r = tovar(T.zeros(batch_size))
+                else:
+                    m = overlay(model.g[:, t], model.v_B[:, t, :4], m)
+                    m_list.append(m)
+                    y_teacher = self.teacher(m).max(1)[1]
+                    r = (y_teacher == y[:, 0]).float() * self.correct
             else:
                 r = (model.y_hat[:, t, 0] == y[:, 0]).float() * self.correct
             r_list.append(r)
 
         r = T.stack(r_list, 1)
+        m = T.stack(m_list, 1)
 
         # Only count the last step
-        b_loss = ((r[:, -1] - b[:, -1]) ** 2).mean()
-
-        v_B_loss = -(r[:, -1] - b[:, -1]) * model.v_B_logprob.mean(-1).mean(-1)
+        if self.teacher is None:
+            b_loss = ((r[:, -1] - b[:, -1]) ** 2).mean()
+            v_B_loss = -(r[:, -1] - b[:, -1]) * model.v_B_logprob.mean(-1).mean(-1)
+        else:
+            b_loss = ((r - b) ** 2).mean()
+            gamma = self.gamma ** tovar(
+                    T.arange(n_steps)[None, :].expand_as(r))
+            self.q = reverse(reverse(gamma * (r - b), 1).cumsum(1), 1)
+            v_B_loss = (self.q * model.v_B_logprob.mean(-1)).mean(-1)
         v_B_loss = v_B_loss.mean()
 
         if self.training:
             self.opt.zero_grad()
             b_loss.backward(retain_graph=True)
             self.opt.step()
+            print(max(p.data.max() for p in self.critic.parameters()))
+            print(min(p.data.min() for p in self.critic.parameters()))
+
+        self.b = b
+        self.r = r
+        self.m = m
 
         return y_loss + v_B_loss
 

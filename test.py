@@ -78,7 +78,8 @@ else:
     if args.loss == 'supervised':
         loss_fn = losses.SupervisedClassifierLoss()
     elif args.loss == 'hybrid':
-        loss_fn = losses.HybridClassifierLoss(state_size=512)  # same as LSTM
+        teacher = T.load('teacher.pt')
+        loss_fn = losses.HybridClassifierLoss(state_size=512, teacher=teacher)  # same as LSTM
 
     def train_loss(solver):
         x, y_cnt, y, B = solver.datum
@@ -127,14 +128,21 @@ def on_after_eval_batch(solver):
 
     if solver.nviz > 0:
         solver.nviz -= 1
-        fig, ax = PL.subplots(2, 3)
+        if args.loss == 'hybrid':
+            fig, ax = PL.subplots(2, 5)
+        else:
+            fig, ax = PL.subplots(2, 3)
+        fig.set_size_inches(10, 8)
+
         x, _, _, B = solver.datum
-        ax[0, 0].imshow(tonumpy(x[0].permute(1, 2, 0)))
-        addbox(ax[0, 0], tonumpy(B[0, 0]), 'red')
+        ax.flatten()[0].imshow(tonumpy(x[0].permute(1, 2, 0)))
+        addbox(ax.flatten()[0], tonumpy(B[0, 0]), 'red')
         v_B = tonumpy(solver.model.v_B)
         for i in range(args.n_max):
-            addbox(ax[0, 0], tonumpy(v_B[0, i, :4] * args.image_size), 'yellow', i+1)
-            ax[(i+1)//3, (i+1)%3].imshow(tonumpy(solver.model.g[0, i].permute(1, 2, 0)))
+            addbox(ax.flatten()[0], tonumpy(v_B[0, i, :4] * args.image_size), 'yellow', i+1)
+            ax.flatten()[i + 1].imshow(tonumpy(solver.model.g[0, i].permute(1, 2, 0)), vmin=0, vmax=1)
+            if args.loss == 'hybrid' and i < args.n_max - 1:
+                ax.flatten()[i + 6].imshow(tonumpy(loss_fn.m[0, i].permute(1, 2, 0)), vmin=0, vmax=1)
         wm.display_mpl_figure(fig, win='viz{}'.format(solver.nviz))
 
 def on_after_eval(solver):

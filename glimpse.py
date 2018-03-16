@@ -78,7 +78,7 @@ class GaussianGlimpse(NN.Module):
 
     @classmethod
     def full(cls):
-        return tovar([0.5, 0.5, 1, 1, 0.5, 0.5])
+        return tovar([0.5, 0.5, 1, 1, 1, 1])
 
     @classmethod
     def rescale(cls, x, glimpse_sample):
@@ -113,7 +113,7 @@ class GaussianGlimpse(NN.Module):
             diag_logprob = diagN.log_prob(diag)
 
             s = T.stack([y[4], y[5]], -1)
-            sSN = SigmoidNormal(s, T.ones_like(s) * 0.1)
+            sSN = SigmoidNormal(s, T.ones_like(s) * 0.05)
             s = sSN.sample()
             s_logprob = sSN.log_prob(s)
             y = [

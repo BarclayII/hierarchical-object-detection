@@ -33,6 +33,7 @@ class Solver(object):
 
             _ = [callback(self) for callback in self._before_train]
             self.training = True
+
             for i, datum in enumerate(self._dataloader):
                 self.batch = i
                 self.datum = datum

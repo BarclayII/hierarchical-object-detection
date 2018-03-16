@@ -63,7 +63,7 @@ def overlay(fore, fore_bbox, back):
 
     fore = F.grid_sample(fore, grid)
     fore_rgb = fore[:, :3]
-    fore_alpha = fore[:, -1]
+    fore_alpha = fore[:, 3:4]
     result = fore_rgb * fore_alpha + back * (1 - fore_alpha)
 
     return result
