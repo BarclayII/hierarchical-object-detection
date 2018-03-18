@@ -74,17 +74,17 @@ class HybridClassifierLoss(NN.Module):
         m = tovar(T.zeros(batch_size, *self.input_size))
 
         for t in range(n_steps):
-            if t != n_steps - 1:
-                if self.teacher is None:
+            if self.teacher is None:
+                if t != n_steps - 1:
                     r = tovar(T.zeros(batch_size))
                 else:
-                    m = overlay(model.g[:, t], model.v_B[:, t, :4], m)
-                    m_list.append(m)
-                    y_teacher_hat = self.teacher(m)
-                    r = y_teacher_hat.gather(1, y[:, 0:1])[:, 0].detach()
-                    #r = (y_teacher == y[:, 0]).float() * self.correct
+                    r = (model.y_hat[:, t, 0] == y[:, 0]).float() * self.correct
             else:
-                r = (model.y_hat[:, t, 0] == y[:, 0]).float() * self.correct
+                m = overlay(model.g[:, t], model.v_B[:, t, :4], m)
+                m_list.append(m)
+                y_teacher_hat = self.teacher(m)
+                r = y_teacher_hat.gather(1, y[:, 0:1])[:, 0].detach()
+                #r = (y_teacher == y[:, 0]).float() * self.correct
             r_list.append(r)
 
         r = T.stack(r_list, 1)
