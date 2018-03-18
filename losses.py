@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import copy
 from util import *
 from models import build_mlp
+import numpy as NP
 
 class RLClassifierLoss(NN.Module):
     def __init__(self, correct=1, incorrect=-1, gamma=1, ewma=0.7):
@@ -59,12 +60,15 @@ class HybridClassifierLoss(NN.Module):
         for p in teacher.parameters():
             p.requires_grad = False
 
-    def forward(self, model, y):
+    def forward(self, model, y, critic=False):
         batch_size, n_steps, state_size = model.h.size()
         y_loss = F.cross_entropy(model.y_pre[:, -1], y[:, 0])
         h = model.h.detach()
 
-        b = self.critic(h.view(-1, state_size)).view(batch_size, n_steps)
+        if critic:
+            b = self.critic(h.view(-1, state_size)).view(batch_size, n_steps)
+        else:
+            b = 0
         r_list = []
         m_list = []
         m = tovar(T.zeros(batch_size, *self.input_size))
@@ -76,8 +80,9 @@ class HybridClassifierLoss(NN.Module):
                 else:
                     m = overlay(model.g[:, t], model.v_B[:, t, :4], m)
                     m_list.append(m)
-                    y_teacher = self.teacher(m).max(1)[1]
-                    r = (y_teacher == y[:, 0]).float() * self.correct
+                    y_teacher_hat = self.teacher(m)
+                    r = y_teacher_hat.gather(1, y[:, 0:1])[:, 0].detach()
+                    #r = (y_teacher == y[:, 0]).float() * self.correct
             else:
                 r = (model.y_hat[:, t, 0] == y[:, 0]).float() * self.correct
             r_list.append(r)
@@ -85,8 +90,8 @@ class HybridClassifierLoss(NN.Module):
         r = T.stack(r_list, 1)
         m = T.stack(m_list, 1)
 
-        # Only count the last step
         if self.teacher is None:
+            # Only count the last step
             b_loss = ((r[:, -1] - b[:, -1]) ** 2).mean()
             v_B_loss = -(r[:, -1] - b[:, -1]) * model.v_B_logprob.mean(-1).mean(-1)
         else:
@@ -94,10 +99,10 @@ class HybridClassifierLoss(NN.Module):
             gamma = self.gamma ** tovar(
                     T.arange(n_steps)[None, :].expand_as(r))
             self.q = reverse(reverse(gamma * (r - b), 1).cumsum(1), 1)
-            v_B_loss = (self.q * model.v_B_logprob.mean(-1)).mean(-1)
+            v_B_loss = -(self.q * model.v_B_logprob.mean(-1)).mean(-1)
         v_B_loss = v_B_loss.mean()
 
-        if self.training:
+        if self.training and critic:
             self.opt.zero_grad()
             b_loss.backward(retain_graph=True)
             self.opt.step()

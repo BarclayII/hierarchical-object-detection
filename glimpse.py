@@ -78,7 +78,7 @@ class GaussianGlimpse(NN.Module):
 
     @classmethod
     def full(cls):
-        return tovar([0.5, 0.5, 1, 1, 1, 1])
+        return tovar([0.5, 0.5, 1, 1, 0.5, 0.5])
 
     @classmethod
     def rescale(cls, x, glimpse_sample):

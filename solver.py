@@ -42,6 +42,12 @@ class Solver(object):
                 self.eval_metric = [f(self) for f in self._eval_metric_fns]
                 self.optim.zero_grad()
                 self.train_loss.backward()
+                assert all(
+                        (p.grad.data != p.grad.data).sum() == 0
+                        for p in self.model_params if p.grad is not None)
+                assert not any(
+                        p.grad.data.abs().max() > 1e+5
+                        for p in self.model_params if p.grad is not None)
                 _ = [callback(self) for callback in self._before_step]
                 self.optim.step()
                 _ = [callback(self) for callback in self._after_train_batch]

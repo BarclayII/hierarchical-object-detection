@@ -142,7 +142,8 @@ def on_after_eval_batch(solver):
             addbox(ax.flatten()[0], tonumpy(v_B[0, i, :4] * args.image_size), 'yellow', i+1)
             ax.flatten()[i + 1].imshow(tonumpy(solver.model.g[0, i].permute(1, 2, 0)), vmin=0, vmax=1)
             if args.loss == 'hybrid' and i < args.n_max - 1:
-                ax.flatten()[i + 6].imshow(tonumpy(loss_fn.m[0, i].permute(1, 2, 0)), vmin=0, vmax=1)
+                ax.flatten()[i + 6].imshow(tonumpy(loss_fn.m[0, i].permute(1, 2, 0).clamp(min=0, max=1)),
+                        vmin=0, vmax=1)
         wm.display_mpl_figure(fig, win='viz{}'.format(solver.nviz))
 
 def on_after_eval(solver):
