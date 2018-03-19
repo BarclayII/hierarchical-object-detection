@@ -121,6 +121,7 @@ def on_after_train_batch(solver):
             print('R', tonumpy(loss_fn.r)[0])
             print('ΔR', tonumpy(loss_fn.dr)[0])
             print('B', tonumpy(loss_fn.b)[0])
+            print('Q', tonumpy(loss_fn.q)[0])
 
 def on_before_eval(solver):
     solver.total = solver.correct = 0
