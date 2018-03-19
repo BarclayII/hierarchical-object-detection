@@ -102,7 +102,7 @@ def on_before_run(solver):
     solver.best_correct = 0
 
 def on_before_train(solver):
-    pass
+    loss_fn.train()
 
 def on_before_step(solver):
     solver.norm = clip_grad_norm(solver.model_params, 1)
@@ -117,10 +117,15 @@ def on_after_train_batch(solver):
           min(p.data.min() for p in solver.model_params))
     if not args.teacher:
         print(tonumpy(solver.model.v_B[0]))
+        if args.loss == 'hybrid':
+            print('R', tonumpy(loss_fn.r)[0])
+            print('ΔR', tonumpy(loss_fn.dr)[0])
+            print('B', tonumpy(loss_fn.b)[0])
 
 def on_before_eval(solver):
     solver.total = solver.correct = 0
     solver.nviz = 10
+    loss_fn.eval()
 
 def on_after_eval_batch(solver):
     solver.total += batch_size
@@ -144,6 +149,7 @@ def on_after_eval_batch(solver):
             if args.loss == 'hybrid' and i < args.n_max - 1:
                 ax.flatten()[i + 6].imshow(tonumpy(loss_fn.m[0, i].permute(1, 2, 0).clamp(min=0, max=1)),
                         vmin=0, vmax=1)
+                ax.flatten()[i + 6].set_title('%.3f' % NP.asscalar(tonumpy(loss_fn.r[0, i])))
         wm.display_mpl_figure(fig, win='viz{}'.format(solver.nviz))
 
 def on_after_eval(solver):

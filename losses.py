@@ -60,7 +60,7 @@ class HybridClassifierLoss(NN.Module):
         for p in teacher.parameters():
             p.requires_grad = False
 
-    def forward(self, model, y, critic=False):
+    def forward(self, model, y, critic=True):
         batch_size, n_steps, state_size = model.h.size()
         y_loss = F.cross_entropy(model.y_pre[:, -1], y[:, 0])
         h = model.h.detach()
@@ -69,9 +69,10 @@ class HybridClassifierLoss(NN.Module):
             b = self.critic(h.view(-1, state_size)).view(batch_size, n_steps)
         else:
             b = 0
-        r_list = []
+        dr_list = []
         m_list = []
         m = tovar(T.zeros(batch_size, *self.input_size))
+        prev_r = 0
 
         for t in range(n_steps):
             if self.teacher is None:
@@ -79,15 +80,17 @@ class HybridClassifierLoss(NN.Module):
                     r = tovar(T.zeros(batch_size))
                 else:
                     r = (model.y_hat[:, t, 0] == y[:, 0]).float() * self.correct
+                dr_list.append(r)
             else:
                 m = overlay(model.g[:, t], model.v_B[:, t, :4], m)
                 m_list.append(m)
                 y_teacher_hat = self.teacher(m)
                 r = y_teacher_hat.gather(1, y[:, 0:1])[:, 0].detach()
+                dr_list.append(r - prev_r)
+                prev_r = r
                 #r = (y_teacher == y[:, 0]).float() * self.correct
-            r_list.append(r)
 
-        r = T.stack(r_list, 1)
+        r = T.stack(dr_list, 1)
         m = T.stack(m_list, 1)
 
         if self.teacher is None:
@@ -110,7 +113,8 @@ class HybridClassifierLoss(NN.Module):
             print(min(p.data.min() for p in self.critic.parameters()))
 
         self.b = b
-        self.r = r
+        self.dr = r
+        self.r = T.cumsum(r, 1)
         self.m = m
 
         return y_loss + v_B_loss
