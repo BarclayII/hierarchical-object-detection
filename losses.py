@@ -117,7 +117,8 @@ class HybridClassifierLoss(NN.Module):
         self.r = T.cumsum(r, 1)
         self.m = m
 
-        return y_loss + v_B_loss
+        #return y_loss + v_B_loss
+        return v_B_loss
 
 class SupervisedClassifierLoss(NN.Module):
     def forward(self, y, y_pre, p_pre):

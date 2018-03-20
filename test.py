@@ -102,7 +102,8 @@ def on_before_run(solver):
     solver.best_correct = 0
 
 def on_before_train(solver):
-    loss_fn.train()
+    if not args.teacher:
+        loss_fn.train()
 
 def on_before_step(solver):
     solver.norm = clip_grad_norm(solver.model_params, 1)
@@ -125,33 +126,36 @@ def on_after_train_batch(solver):
 
 def on_before_eval(solver):
     solver.total = solver.correct = 0
-    solver.nviz = 10
-    loss_fn.eval()
+
+    if not args.teacher:
+        solver.nviz = 10
+        loss_fn.eval()
 
 def on_after_eval_batch(solver):
     solver.total += batch_size
     solver.correct += solver.eval_metric[0]
 
-    if solver.nviz > 0:
-        solver.nviz -= 1
-        if args.loss == 'hybrid':
-            fig, ax = PL.subplots(2, 5)
-        else:
-            fig, ax = PL.subplots(2, 3)
-        fig.set_size_inches(10, 8)
+    if not args.teacher:
+        if solver.nviz > 0:
+            solver.nviz -= 1
+            if args.loss == 'hybrid':
+                fig, ax = PL.subplots(2, 5)
+            else:
+                fig, ax = PL.subplots(2, 3)
+            fig.set_size_inches(10, 8)
 
-        x, _, _, B = solver.datum
-        ax.flatten()[0].imshow(tonumpy(x[0].permute(1, 2, 0)))
-        addbox(ax.flatten()[0], tonumpy(B[0, 0]), 'red')
-        v_B = tonumpy(solver.model.v_B)
-        for i in range(args.n_max):
-            addbox(ax.flatten()[0], tonumpy(v_B[0, i, :4] * args.image_size), 'yellow', i+1)
-            ax.flatten()[i + 1].imshow(tonumpy(solver.model.g[0, i].permute(1, 2, 0)), vmin=0, vmax=1)
-            if args.loss == 'hybrid' and i < args.n_max - 1:
-                ax.flatten()[i + 6].imshow(tonumpy(loss_fn.m[0, i].permute(1, 2, 0).clamp(min=0, max=1)),
-                        vmin=0, vmax=1)
-                ax.flatten()[i + 6].set_title('%.3f' % NP.asscalar(tonumpy(loss_fn.r[0, i])))
-        wm.display_mpl_figure(fig, win='viz{}'.format(solver.nviz))
+            x, _, _, B = solver.datum
+            ax.flatten()[0].imshow(tonumpy(x[0].permute(1, 2, 0)))
+            addbox(ax.flatten()[0], tonumpy(B[0, 0]), 'red')
+            v_B = tonumpy(solver.model.v_B)
+            for i in range(args.n_max):
+                addbox(ax.flatten()[0], tonumpy(v_B[0, i, :4] * args.image_size), 'yellow', i+1)
+                ax.flatten()[i + 1].imshow(tonumpy(solver.model.g[0, i].permute(1, 2, 0)), vmin=0, vmax=1)
+                if args.loss == 'hybrid' and i < args.n_max - 1:
+                    ax.flatten()[i + 6].imshow(tonumpy(loss_fn.m[0, i].permute(1, 2, 0).clamp(min=0, max=1)),
+                            vmin=0, vmax=1)
+                    ax.flatten()[i + 6].set_title('%.3f' % NP.asscalar(tonumpy(loss_fn.r[0, i])))
+            wm.display_mpl_figure(fig, win='viz{}'.format(solver.nviz))
 
 def on_after_eval(solver):
     print(solver.epoch, solver.correct, '/', solver.total)
