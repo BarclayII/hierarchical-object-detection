@@ -72,7 +72,7 @@ class CNNClassifier(NN.Module):
     def forward(self, x):
         batch_size = x.size()[0]
         self.y_pre = self.mlp(self.cnn(x).view(batch_size, -1))
-        self.y_hat_logprob = F.log_softmax(self.y_pre)
+        self.y_hat_logprob = F.log_softmax(self.y_pre, -1)
         return self.y_hat_logprob.exp()
 
 class SequentialGlimpsedClassifier(NN.Module):
@@ -93,7 +93,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                  glimpse_type='gaussian',
                  glimpse_size=(10, 10),
                  relative_previous=False,
-                 glimpse_sample=True,
+                 glimpse_sample=False,
                  ):
         NN.Module.__init__(self)
         self.glimpse = create_glimpse(glimpse_type, glimpse_size)
@@ -183,7 +183,7 @@ class SequentialGlimpsedClassifier(NN.Module):
             p_logprob = F.logsigmoid((p * 2 - 1) * p_pre)
             p_logprob_list.append(p_logprob)
             if feedback == 'sample':
-                y_hat_logprob = F.log_softmax(y_pre, 1)
+                y_hat_logprob = F.log_softmax(y_pre, -1)
                 y_hat = y_hat_logprob.exp().multinomial()
                 y_hat_list.append(y_hat)
                 y_hat_logprob = y_hat_logprob.gather(1, y_hat)
@@ -194,7 +194,8 @@ class SequentialGlimpsedClassifier(NN.Module):
         self.y_pre = T.stack(y_pre_list, 1)
         self.p_pre = T.stack(p_pre_list, 1)
         self.v_B = T.stack(v_B_list, 1)
-        self.v_B_logprob = T.stack(v_B_logprob_list, 1)
+        if self.glimpse_sample:
+            self.v_B_logprob = T.stack(v_B_logprob_list, 1)
         self.g = T.stack(g_list, 1)
         self.y_hat = T.stack(y_hat_list, 1)
         self.y_hat_logprob = T.stack(y_hat_logprob_list, 1)

@@ -13,6 +13,7 @@ from functools import partial
 import solver
 from viz import VisdomWindowManager
 import matplotlib.pyplot as PL
+from logger import register_backward_hooks, log_grad
 
 batch_size = 64
 ones = T.ones(batch_size, 10).long()
@@ -73,20 +74,35 @@ else:
         n_class_embed_dims=50,
         relative_previous=False,
         glimpse_size=(args.glim_size, args.glim_size),
-        glimpse_type=args.glim_type))
+        glimpse_type=args.glim_type,
+        glimpse_sample=(args.loss == 'hybrid')))
 
     if args.loss == 'supervised':
         loss_fn = losses.SupervisedClassifierLoss()
     elif args.loss == 'hybrid':
         teacher = T.load('teacher.pt')
         loss_fn = losses.HybridClassifierLoss(state_size=512, teacher=teacher)  # same as LSTM
+    elif args.loss == 'map':
+        loss_fn = losses.SupervisedMAPLoss()
+
+    register_backward_hooks(model)
+    register_backward_hooks(loss_fn)
+    model.register_backward_hook(partial(log_grad, name='model'))
+    loss_fn.register_backward_hook(partial(log_grad, name='loss_fn'))
 
     def train_loss(solver):
         x, y_cnt, y, B = solver.datum
+        batch_size, n_labels = y.size()
         if args.loss == 'supervised':
             loss = loss_fn(y[:, 0], solver.model.y_pre, solver.model.p_pre)
         elif args.loss == 'hybrid':
             loss = loss_fn(solver.model, y)
+        elif args.loss == 'map':
+            y = T.cat(
+                [y, tovar(T.zeros(batch_size, args.n_max - n_labels).long() + mnist_train.n_classes)],
+                -1
+                )
+            loss = loss_fn(y, solver.model.y_pre, solver.model.p_pre)
         return loss
 
     def acc(solver):

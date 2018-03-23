@@ -78,7 +78,8 @@ class GaussianGlimpse(NN.Module):
 
     @classmethod
     def full(cls):
-        return tovar([0.5, 0.5, 1, 1, 0.5, 0.5])
+        #return tovar([0.5, 0.5, 1, 1, 0.5, 0.5])
+        return tovar([0.5, 0.5, 1, 1, 0.1, 0.1])
 
     @classmethod
     def rescale(cls, x, glimpse_sample):
@@ -88,8 +89,10 @@ class GaussianGlimpse(NN.Module):
                     F.sigmoid(x[..., 1]),    # cy
                     F.sigmoid(x[..., 2]) * 2,
                     F.sigmoid(x[..., 3]) * 2,
-                    F.sigmoid(x[..., 4]),
-                    F.sigmoid(x[..., 5]),
+                    #F.sigmoid(x[..., 4]),
+                    #F.sigmoid(x[..., 5]),
+                    T.zeros_like(x[..., 4]) + 0.1,
+                    T.zeros_like(x[..., 5]) + 0.1,
                     ]
             logprob = 0
         else:
@@ -98,8 +101,8 @@ class GaussianGlimpse(NN.Module):
                     F.sigmoid(x[..., 1]),    # cy
                     F.sigmoid(x[..., 2]) * 2,
                     F.sigmoid(x[..., 3]) * 2,
-                    x[..., 4],
-                    x[..., 5],
+                    T.zeros_like(x[..., 4]),
+                    T.zeros_like(x[..., 5]),
                     ]
             diag = T.stack([
                 y[0] - y[2] / 2,
@@ -112,10 +115,11 @@ class GaussianGlimpse(NN.Module):
             diag = diagN.sample()
             diag_logprob = diagN.log_prob(diag)
 
-            s = T.stack([y[4], y[5]], -1)
-            sSN = SigmoidNormal(s, T.ones_like(s) * 0.05)
-            s = sSN.sample()
-            s_logprob = sSN.log_prob(s)
+            s = F.sigmoid(T.stack([y[4], y[5]], -1))
+            #sSN = SigmoidNormal(s, T.ones_like(s) * 0.05)
+            #s = sSN.sample()
+            #s_logprob = sSN.log_prob(s)
+            s_logprob = T.zeros_like(s)
             y = [
                     (diag[..., 0] + diag[..., 2]) / 2,
                     (diag[..., 1] + diag[..., 3]) / 2,
