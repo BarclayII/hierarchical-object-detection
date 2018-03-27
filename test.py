@@ -67,7 +67,9 @@ if args.teacher:
     def acc(solver):
         x, y_cnt, y, B = solver.datum
         B = B.float() / args.image_size
-        return NP.asscalar(tonumpy((y[:, 0] == solver.model.y_pre.max(-1)[1]).sum()))
+        y_pre = solver.model.y_pre.max(-1)[1]
+        y_pre_cnt = tovar(cuda(T.LongTensor(batch_size, 10).zero_())).scatter_add_(1, y_pre, T.ones_like(y_pre))
+        return NP.asscalar(tonumpy((y_cnt == y_pre_cnt).prod(1).sum()))
 
 else:
     model = cuda(models.SequentialGlimpsedClassifier(
@@ -117,7 +119,9 @@ else:
     def acc(solver):
         x, y_cnt, y, B = solver.datum
         B = B.float() / args.image_size
-        return NP.asscalar(tonumpy((y[:, 0] == solver.model.y_pre.max(-1)[1][:, -1]).sum()))
+        y_pre = solver.model.y_pre.max(-1)[1]
+        y_pre_cnt = tovar(cuda(T.LongTensor(batch_size, 10).zero_())).scatter_add_(1, y_pre, T.ones_like(y_pre))
+        return NP.asscalar(tonumpy((y_cnt == y_pre_cnt).prod(1).sum()))
 
 
 def model_output(solver):
