@@ -61,10 +61,12 @@ if args.teacher:
     model = cuda(models.CNNClassifier(mlp_dims=512))
     def train_loss(solver):
         x, y_cnt, y, B = solver.datum
+        B = B.float() / args.image_size
         return F.cross_entropy(solver.model.y_pre, y[:, 0])
 
     def acc(solver):
         x, y_cnt, y, B = solver.datum
+        B = B.float() / args.image_size
         return NP.asscalar(tonumpy((y[:, 0] == solver.model.y_pre.max(-1)[1]).sum()))
 
 else:
@@ -96,6 +98,7 @@ else:
 
     def train_loss(solver):
         x, y_cnt, y, B = solver.datum
+        B = B.float() / args.image_size
         batch_size, n_labels = y.size()
         if args.loss == 'supervised':
             loss = loss_fn(y[:, 0], solver.model.y_pre, solver.model.p_pre)
@@ -113,11 +116,13 @@ else:
 
     def acc(solver):
         x, y_cnt, y, B = solver.datum
+        B = B.float() / args.image_size
         return NP.asscalar(tonumpy((y[:, 0] == solver.model.y_pre.max(-1)[1][:, -1]).sum()))
 
 
 def model_output(solver):
     x, y_cnt, y, B = solver.datum
+    B = B.float() / args.image_size
     if args.loss == 'multi':
         return solver.model(x, y=y, B=B, feedback='oracle')
     return solver.model(x, y=y)

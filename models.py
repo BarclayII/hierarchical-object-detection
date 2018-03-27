@@ -207,7 +207,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                 if self.glimpse_type == 'gaussian':
                     _idx = idx.unsqueeze(2).expand(batch_size, 1, 4)
                     v_B = T.cat([
-                        B.float().gather(1, _idx)[:, 0],
+                        B.gather(1, _idx)[:, 0],
                         v_B[:, -2:]
                         ], 1)
 

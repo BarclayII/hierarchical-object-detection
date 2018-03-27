@@ -137,7 +137,7 @@ class SupervisedMultitaskMultiobjectLoss(NN.Module):
 
         y = y.gather(1, idx[:, :, 0]).view(-1)
         y_pre = y_pre.view(-1, n_classes)
-        B = B.float().gather(1, idx.expand(batch_size, n_steps, 4))
+        B = B.gather(1, idx.expand(batch_size, n_steps, 4))
         B_pre = B_pre[:, :, :4]
 
         y_loss = F.cross_entropy(y_pre, y)
