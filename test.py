@@ -42,9 +42,11 @@ parser.add_argument('--glim-type', type=str, default='gaussian')
 parser.add_argument('--loss', type=str, default='supervised')
 args = parser.parse_args()
 
-mnist_train = MNISTMulti('.', n_digits=1, backrand=args.backnoise,
+n_digits = 1 if args.loss != 'multi' else 3
+
+mnist_train = MNISTMulti('.', n_digits=n_digits, backrand=args.backnoise,
         image_rows=args.image_size, image_cols=args.image_size, download=True)
-mnist_valid = MNISTMulti('.', n_digits=1, backrand=args.backnoise,
+mnist_valid = MNISTMulti('.', n_digits=n_digits, backrand=args.backnoise,
         image_rows=args.image_size, image_cols=args.image_size, download=False, mode='valid')
 mnist_train_dataloader = wrap_output(
         T.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0),
@@ -84,6 +86,8 @@ else:
         loss_fn = losses.HybridClassifierLoss(state_size=512, teacher=teacher)  # same as LSTM
     elif args.loss == 'map':
         loss_fn = losses.SupervisedMAPLoss()
+    elif args.loss == 'multi':
+        loss_fn = losses.SupervisedMultitaskMultiobjectLoss()
 
     register_backward_hooks(model)
     register_backward_hooks(loss_fn)
@@ -103,6 +107,8 @@ else:
                 -1
                 )
             loss = loss_fn(y, solver.model.y_pre, solver.model.p_pre)
+        elif args.loss == 'multi':
+            loss = loss_fn(y, solver.model.y_pre, B, solver.model.v_B_pre, solver.model.idx)
         return loss
 
     def acc(solver):
@@ -112,7 +118,9 @@ else:
 
 def model_output(solver):
     x, y_cnt, y, B = solver.datum
-    return solver.model(x)
+    if args.loss == 'multi':
+        return solver.model(x, y=y, B=B, feedback='oracle')
+    return solver.model(x, y=y)
 
 def on_before_run(solver):
     solver.best_correct = 0

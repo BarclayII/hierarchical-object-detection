@@ -96,6 +96,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                  glimpse_sample=False,
                  ):
         NN.Module.__init__(self)
+        self.glimpse_type = glimpse_type
         self.glimpse = create_glimpse(glimpse_type, glimpse_size)
         self.cnn = build_cnn(
                 filters=pre_lstm_filters,
@@ -121,7 +122,7 @@ class SequentialGlimpsedClassifier(NN.Module):
                                 layer_sizes=[mlp_dims, 1])
         self.proj_B = build_mlp(input_size=lstm_dims,
                                 layer_sizes=[mlp_dims, self.glimpse.att_params])
-        #self.y_in = NN.Embedding(n_classes, n_class_embed_dims)
+        self.y_in = NN.Embedding(n_classes, n_class_embed_dims)
 
         self.n_max = n_max
         self.lstm_dims = lstm_dims
@@ -131,7 +132,7 @@ class SequentialGlimpsedClassifier(NN.Module):
 
         self.relative_previous = relative_previous
 
-    def forward(self, x, y=None, feedback='sample'):
+    def forward(self, x, y=None, B=None, feedback='sample'):
         '''
         x: (batch_size, nchannels, nrows, ncols)
         '''
@@ -142,17 +143,21 @@ class SequentialGlimpsedClassifier(NN.Module):
         v_B_logprob = T.zeros_like(v_B)
         y_emb = tovar(T.zeros(batch_size, self.n_class_embed_dims))
         s = self.lstm.zero_state(batch_size)
+        if y is not None:
+            y = y.clone()
 
         y_pre_list = []
         h_list = []
         p_pre_list = []
         v_B_list = []
+        v_B_pre_list = []
         v_B_logprob_list = []
         g_list = []
         y_hat_list = []
         y_hat_logprob_list = []
         p_list = []
         p_logprob_list = []
+        idx_list = []
 
         for t in range(self.n_max):
             v_B_list.append(v_B)
@@ -175,6 +180,7 @@ class SequentialGlimpsedClassifier(NN.Module):
 
             y_pre_list.append(y_pre)
             p_pre_list.append(p_pre)
+            v_B_pre_list.append(v_B_pre)
             g_list.append(g)
 
             p_logprob = F.logsigmoid(p_pre)
@@ -189,17 +195,39 @@ class SequentialGlimpsedClassifier(NN.Module):
                 y_hat_logprob = y_hat_logprob.gather(1, y_hat)
                 y_hat_logprob_list.append(y_hat_logprob)
                 #y_emb = self.y_in(y_hat[:, 0]) * 0
+            elif feedback == 'oracle':
+                n_y = (y != -1) # -1 means that we have chosen this
+                idx = n_y.float().multinomial(1)
+                y_hat = y.gather(1, idx)
+                y_hat_list.append(y_hat)
+                idx_list.append(idx)
+                y_emb = self.y_in(y_hat[:, 0])
+                y.scatter_(1, idx, -1)
+
+                if self.glimpse_type == 'gaussian':
+                    _idx = idx.unsqueeze(2).expand(batch_size, 1, 4)
+                    v_B = T.cat([
+                        B.float().gather(1, _idx)[:, 0],
+                        v_B[:, -2:]
+                        ], 1)
 
         self.h = T.stack(h_list, 1)
         self.y_pre = T.stack(y_pre_list, 1)
         self.p_pre = T.stack(p_pre_list, 1)
         self.v_B = T.stack(v_B_list, 1)
-        if self.glimpse_sample:
-            self.v_B_logprob = T.stack(v_B_logprob_list, 1)
+        self.v_B_pre = T.stack(v_B_pre_list, 1)
         self.g = T.stack(g_list, 1)
         self.y_hat = T.stack(y_hat_list, 1)
-        self.y_hat_logprob = T.stack(y_hat_logprob_list, 1)
         self.p = T.stack(p_list, 1)
         self.p_logprob = T.stack(p_logprob_list, 1)
+
+        if self.glimpse_sample:
+            self.v_B_logprob = T.stack(v_B_logprob_list, 1)
+
+        if feedback == 'sample':
+            self.y_hat_logprob = T.stack(y_hat_logprob_list, 1)
+        elif feedback == 'oracle':
+            self.idx = T.stack(idx_list, 1)
+            self.y_hat_logprob = 0
 
         return self.y_hat, self.y_hat_logprob, self.p, self.p_logprob
