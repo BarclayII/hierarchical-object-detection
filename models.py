@@ -196,20 +196,32 @@ class SequentialGlimpsedClassifier(NN.Module):
                 y_hat_logprob_list.append(y_hat_logprob)
                 #y_emb = self.y_in(y_hat[:, 0]) * 0
             elif feedback == 'oracle':
-                n_y = (y != -1) # -1 means that we have chosen this
-                idx = n_y.float().multinomial(1)
-                y_hat = y.gather(1, idx)
-                y_hat_list.append(y_hat)
-                idx_list.append(idx)
-                y_emb = self.y_in(y_hat[:, 0])
-                y.scatter_(1, idx, -1)
+                assert self.glimpse_type == 'gaussian'
 
-                if self.glimpse_type == 'gaussian':
+                if t < self.n_max - 1:
+                    n_y = (y != -1) # -1 means that we have chosen this
+                    idx = n_y.float().multinomial(1)
                     _idx = idx.unsqueeze(2).expand(batch_size, 1, 4)
-                    v_B = T.cat([
-                        B.gather(1, _idx)[:, 0],
-                        v_B[:, -2:]
-                        ], 1)
+
+                if t == 0:
+                    y_hat = tovar(T.zeros(batch_size, 1).long())
+                    B_next = B.gather(1, _idx)[:, 0]
+                    idx_list.append(idx)
+                    prev_y = y.gather(1, idx)
+                    v_B = T.cat([B_next, v_B[:, -2:]], 1)
+                    y.scatter_(1, idx, -1)
+                elif t == self.n_max - 1:
+                    y_hat = prev_y
+                else:
+                    y_hat = prev_y
+                    B_next = B.gather(1, _idx)[:, 0]
+                    idx_list.append(idx)
+                    prev_y = y.gather(1, idx)
+                    y_emb = self.y_in(y_hat[:, 0])
+                    v_B = T.cat([B_next, v_B[:, -2:]], 1)
+                    y.scatter_(1, idx, -1)
+
+                y_hat_list.append(y_hat)
 
         self.h = T.stack(h_list, 1)
         self.y_pre = T.stack(y_pre_list, 1)
