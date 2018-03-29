@@ -88,8 +88,6 @@ else:
     elif args.loss == 'hybrid':
         teacher = T.load('teacher.pt')
         loss_fn = losses.HybridClassifierLoss(state_size=512, teacher=teacher)  # same as LSTM
-    elif args.loss == 'map':
-        loss_fn = losses.SupervisedMAPLoss()
     elif args.loss == 'multi':
         loss_fn = losses.SupervisedMultitaskMultiobjectLoss()
 

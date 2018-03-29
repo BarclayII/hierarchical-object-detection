@@ -144,23 +144,3 @@ class SupervisedMultitaskMultiobjectLoss(NN.Module):
         B_loss = ((B - B_pre) ** 2).mean()
 
         return y_loss + B_loss
-
-
-class SupervisedMAPLoss(NN.Module):
-    def forward(self, y, y_pre, p_pre):
-        batch_size, n_steps, _ = y_pre.size()
-        y_logprob = F.log_softmax(y_pre, -1)
-        p_logprob = F.logsigmoid(p_pre)
-        p_neg_logprob = F.logsigmoid(-p_pre)
-        y_null_logprob = T.cat([y_logprob + p_logprob, p_neg_logprob], -1)
-        # TODO replace the loss with bipartite matching
-        M = -y_null_logprob.gather(2, y[:, None].expand(batch_size, n_steps, n_steps))
-
-        m = tonumpy(M)
-        cs = []
-        for i in range(m.shape[0]):
-            r, c = linear_sum_assignment(m[i])
-            cs.append(c)
-        C = tovar(cs, dtype='int64').unsqueeze(2)
-        loss = M.gather(2, C).sum(1).mean()
-        return loss

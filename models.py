@@ -205,7 +205,10 @@ class SequentialGlimpsedClassifier(NN.Module):
 
                 if t == 0:
                     y_hat = tovar(T.zeros(batch_size, 1).long())
-                    B_next = B.gather(1, _idx)[:, 0]
+                    if self.training:
+                        B_next = B.gather(1, _idx)[:, 0]
+                    else:
+                        B_next = v_B[:, :4]
                     idx_list.append(idx)
                     prev_y = y.gather(1, idx)
                     v_B = T.cat([B_next, v_B[:, -2:]], 1)
@@ -214,7 +217,10 @@ class SequentialGlimpsedClassifier(NN.Module):
                     y_hat = prev_y
                 else:
                     y_hat = prev_y
-                    B_next = B.gather(1, _idx)[:, 0]
+                    if self.training:
+                        B_next = B.gather(1, _idx)[:, 0]
+                    else:
+                        B_next = v_B[:, :4]
                     idx_list.append(idx)
                     prev_y = y.gather(1, idx)
                     y_emb = self.y_in(y_hat[:, 0])
@@ -243,3 +249,35 @@ class SequentialGlimpsedClassifier(NN.Module):
             self.y_hat_logprob = 0
 
         return self.y_hat, self.y_hat_logprob, self.p, self.p_logprob
+
+
+class CompleteTreeGlimpsedClassifier(NN.Module):
+    def __init__(self,
+                 num_children=2,
+                 depth=2,
+                 pre_lstm_filters=[5, 5, 10],
+                 lstm_dims=128,
+                 kernel_size=(3, 3),
+                 final_pool_size=(2, 2),
+                 n_max=10,
+                 in_channels=3,
+                 mlp_dims=128,
+                 n_classes=10,
+                 n_class_embed_dims=10,
+                 glimpse_type='gaussian',
+                 glimpse_size=(10, 10),
+                 relative_previous=False,
+                 glimpse_sample=False,
+                 ):
+        assert glimpse_type == 'gaussian'
+
+        NN.Module.__init__(self)
+
+        self.glimpse_type = glimpse_type
+        self.glimpse = create_glimpse(glimpse_type, glimpse_size)
+
+        self.cnn = build_cnn(
+                filters=pre_lstm_filters,
+                kernel_size=kernel_size,
+                final_pool_size=final_pool_size,
+                )
