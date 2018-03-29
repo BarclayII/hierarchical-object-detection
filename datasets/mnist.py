@@ -32,6 +32,7 @@ class MNISTMulti(Dataset):
     dir_ = 'multi'
     seeds = {'train': 1000, 'valid': 2000, 'test': 3000}
     attr_prefix = {'train': 'training', 'valid': 'valid', 'test': 'test'}
+    n_classes = 10
 
     @property
     def _meta(self):
