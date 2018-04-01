@@ -252,16 +252,18 @@ class SequentialGlimpsedClassifier(NN.Module):
         return self.y_hat, self.y_hat_logprob, self.p, self.p_logprob
 
 
-class CompleteTreeGlimpsedClassifier(NN.Module):
+class FixedFullTreeGlimpsedClassifier(NN.Module):
     '''
-    Always generates a complete tree with the given depth and number of children
+    Always generates a full tree with the given depth and number of children
     '''
-    _TreeNode = namedtuple('_TreeNode', ['g', 's'])
+    class _Node(object):
+        pass
 
     def __init__(self,
                  n_children=2,
                  depth=2,
                  pre_lstm_filters=[5, 5, 10],
+                 message_dims=128,
                  lstm_dims=128,
                  kernel_size=(3, 3),
                  final_pool_size=(2, 2),
@@ -274,6 +276,7 @@ class CompleteTreeGlimpsedClassifier(NN.Module):
                  glimpse_size=(10, 10),
                  relative_previous=False,
                  glimpse_sample=False,
+                 y_sample='proportional',
                  ):
         assert glimpse_type == 'gaussian'
 
@@ -288,10 +291,23 @@ class CompleteTreeGlimpsedClassifier(NN.Module):
                 final_pool_size=final_pool_size,
                 )
 
-        self.proj_y = build_mlp(input_size=lstm_dims,
-                                layer_sizes=[mlp_dims, n_classes + 1])  # Last class for NIL
-        self.proj_B = build_mlp(input_size=lstm_dims,
-                                layer_sizes=[mlp_dims, self.glimpse.att_params])
+        self.rnn_d = ZoneoutLSTMCell(
+                message_dims,
+                lstm_dims,
+                )
+        self.rnn_b = ZoneoutLSTMCell(
+                message_dims,
+                lstm_dims,
+                )
+
+        self.proj_I_phi_B = build_mlp(
+                input_size=pre_lstm_filters[-1] * NP.asscalar(NP.prod(final_pool_size)) + self.glimpse.att_params,
+                layer_sizes=[mlp_dims, message_dims]
+                )
+        self.proj_h_y = build_mlp(input_size=lstm_dims,
+                                  layer_sizes=[mlp_dims, n_classes + 1])  # Last class for NIL
+        self.proj_h_B = build_mlp(input_size=lstm_dims,
+                                  layer_sizes=[mlp_dims, self.glimpse.att_params])
         self.y_in = NN.Embedding(n_classes, n_class_embed_dims)
 
         self.n_max = n_max
@@ -299,11 +315,14 @@ class CompleteTreeGlimpsedClassifier(NN.Module):
         self.n_classes = n_classes
         self.n_class_embed_dims = n_class_embed_dims
         self.glimpse_sample = glimpse_sample
+        self.y_sample = y_sample
 
         self.n_children = n_children
         self.depth = depth
 
         self.relative_previous = relative_previous
+
+        self.T = [_Node() for _ in range(0, self.n_nodes)]
 
     @property
     def n_nodes(self):
@@ -315,17 +334,26 @@ class CompleteTreeGlimpsedClassifier(NN.Module):
     def parent(self, i):
         return (i - 1) // self.n_children
 
-    def forward(self, x, y=None, B=None):
+    def _dive(self, i, x, B, s, I, y):
         '''
-        x: (batch_size, nchannels, nrows, ncols)
+        i: int: node index
+        x: (batch_size, n_channels, n_rows, n_cols): image
+        B: (batch_size, n_att_params): glimpse attention
+        s: depth RNN state
+        I: (batch_size, message_dims): inbound message state
+        y: (batch_size, n_classes): remaining label multi set
         '''
-        batch_size = x.size()[0]
+        g = self.glimpse(x, B[:, None])[:, 0]
+        phi = self.cnn(g).view(batch_size, -1)
+        I_phi_B = self.proj_I_phi(T.cat([phi, B], 1))
 
-        v_B = (self.glimpse.full().unsqueeze(0)
-               .expand(batch_size, self.glimpse.att_params))
-        y_emb = tovar(T.zeros(batch_size, self.n_class_embed_dims))
-        s0 = self.lstm.zero_state(batch_size)
-        if y is not None:
-            y = y.clone()
+        h, s = self.rnn_d(I_phi_B + I, s)
 
-        buffer_ = [None] * self.n_nodes
+        self.T[i].g = g
+        self.T[i].phi = phi
+
+        if self.isleaf(i):
+            y_pre = self.proj_h_y(h)
+            self.T[i].y = y_pre
+        for j in range(self.n_children):
+            B = self.proj_h_B(h)
