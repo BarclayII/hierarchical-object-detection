@@ -8,6 +8,7 @@ import numpy.random as RNG
 from util import *
 from glimpse import create_glimpse
 from zoneout import ZoneoutLSTMCell
+from collections import namedtuple
 
 def build_cnn(**config):
     cnn_list = []
@@ -205,7 +206,7 @@ class SequentialGlimpsedClassifier(NN.Module):
 
                 if t == 0:
                     y_hat = tovar(T.zeros(batch_size, 1).long())
-                    if self.training:
+                    if self.training and NP.random.randint(3) > 0:
                         B_next = B.gather(1, _idx)[:, 0]
                     else:
                         B_next = v_B[:, :4]
@@ -252,8 +253,13 @@ class SequentialGlimpsedClassifier(NN.Module):
 
 
 class CompleteTreeGlimpsedClassifier(NN.Module):
+    '''
+    Always generates a complete tree with the given depth and number of children
+    '''
+    _TreeNode = namedtuple('_TreeNode', ['g', 's'])
+
     def __init__(self,
-                 num_children=2,
+                 n_children=2,
                  depth=2,
                  pre_lstm_filters=[5, 5, 10],
                  lstm_dims=128,
@@ -281,3 +287,45 @@ class CompleteTreeGlimpsedClassifier(NN.Module):
                 kernel_size=kernel_size,
                 final_pool_size=final_pool_size,
                 )
+
+        self.proj_y = build_mlp(input_size=lstm_dims,
+                                layer_sizes=[mlp_dims, n_classes + 1])  # Last class for NIL
+        self.proj_B = build_mlp(input_size=lstm_dims,
+                                layer_sizes=[mlp_dims, self.glimpse.att_params])
+        self.y_in = NN.Embedding(n_classes, n_class_embed_dims)
+
+        self.n_max = n_max
+        self.lstm_dims = lstm_dims
+        self.n_classes = n_classes
+        self.n_class_embed_dims = n_class_embed_dims
+        self.glimpse_sample = glimpse_sample
+
+        self.n_children = n_children
+        self.depth = depth
+
+        self.relative_previous = relative_previous
+
+    @property
+    def n_nodes(self):
+        return (self.n_children ** self.depth - 1) // (self.n_children - 1)
+
+    def isleaf(self, i):
+        return i <= (self.n_children ** (self.depth - 1) - 1) // (self.n_children - 1)
+
+    def parent(self, i):
+        return (i - 1) // self.n_children
+
+    def forward(self, x, y=None, B=None):
+        '''
+        x: (batch_size, nchannels, nrows, ncols)
+        '''
+        batch_size = x.size()[0]
+
+        v_B = (self.glimpse.full().unsqueeze(0)
+               .expand(batch_size, self.glimpse.att_params))
+        y_emb = tovar(T.zeros(batch_size, self.n_class_embed_dims))
+        s0 = self.lstm.zero_state(batch_size)
+        if y is not None:
+            y = y.clone()
+
+        buffer_ = [None] * self.n_nodes
