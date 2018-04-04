@@ -271,7 +271,6 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
                  in_channels=3,
                  mlp_dims=128,
                  n_classes=10,
-                 n_class_embed_dims=10,
                  glimpse_type='gaussian',
                  glimpse_size=(10, 10),
                  relative_previous=False,
@@ -308,7 +307,7 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
                                   layer_sizes=[mlp_dims, n_classes + 1])  # Last class for NIL
         self.proj_h_B = build_mlp(input_size=lstm_dims,
                                   layer_sizes=[mlp_dims, self.glimpse.att_params])
-        self.y_in = NN.Embedding(n_classes, n_class_embed_dims)
+        self.y_in = NN.Embedding(n_classes, message_dims)
 
         self.n_max = n_max
         self.lstm_dims = lstm_dims
@@ -322,19 +321,21 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
 
         self.relative_previous = relative_previous
 
-        self.T = [_Node() for _ in range(0, self.n_nodes)]
-
     @property
     def n_nodes(self):
         return (self.n_children ** self.depth - 1) // (self.n_children - 1)
 
+    @property
+    def n_leaves(self):
+        return self.n_children ** (self.depth - 1)
+
     def isleaf(self, i):
-        return i <= (self.n_children ** (self.depth - 1) - 1) // (self.n_children - 1)
+        return i >= (self.n_children ** (self.depth - 1) - 1) // (self.n_children - 1)
 
     def parent(self, i):
         return (i - 1) // self.n_children
 
-    def _dive(self, i, x, B, s, I, y):
+    def _dive(self, i, x, B, s, y=None):
         '''
         i: int: node index
         x: (batch_size, n_channels, n_rows, n_cols): image
@@ -346,14 +347,45 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
         g = self.glimpse(x, B[:, None])[:, 0]
         phi = self.cnn(g).view(batch_size, -1)
         I_phi_B = self.proj_I_phi(T.cat([phi, B], 1))
+        batch_size, n_classes = y.size()
 
         h, s = self.rnn_d(I_phi_B + I, s)
 
         self.T[i].g = g
         self.T[i].phi = phi
+        self.T[i].B = B
 
         if self.isleaf(i):
             y_pre = self.proj_h_y(h)
-            self.T[i].y = y_pre
-        for j in range(self.n_children):
-            B = self.proj_h_B(h)
+            y_hat = y_pre.multinomial(1)
+            h = self.y_in(y_hat)
+            if y is not None:
+                remaining = y.gather(1, y_hat)
+                correct = (remaining > 0).float()
+                wrong = (remaining == 0).float()
+                R = correct * 1 + wrong * (-1)
+                y = y - T.zeros_like(y).scatter_add(1, y_hat, T.ones_like(y_hat))
+                y = y.clamp(min=0)
+                self.T[i].R = R
+
+            self.T[i].y_pre = y_pre
+            self.T[i].y_hat = y_hat
+            return h, y
+        else:
+            for _j in range(self.n_children):
+                j = i * self.n_children + _j + 1
+
+                B = self.proj_h_B(h)
+                o, y = self._dive(j, x, B, s, y)
+                h, s = self.rnn_b(o, s)
+            return h, y
+
+    def forward(self, x, y=None):
+        batch_size = x.size()[0]
+        B = (self.glimpse.full().unsqueeze(0)
+             .expand(batch_size, self.glimpse.att_params))
+
+        self.T = [_Node() for _ in range(0, self.n_nodes)]
+        s = self.rnn_d.zero_state(batch_size)
+
+        return self._dive(0, x, B, s, y)

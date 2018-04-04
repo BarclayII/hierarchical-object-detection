@@ -16,20 +16,8 @@ import matplotlib.pyplot as PL
 from logger import register_backward_hooks, log_grad
 
 batch_size = 64
-ones = T.ones(batch_size, 10).long()
-
-def process_datum(x, y, B, volatile=False):
-    y_cnt = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, y, ones))
-    x = tovar(x.float() / 255, volatile=volatile)
-    y_cnt = tovar(y_cnt, volatile=volatile)
-    y = tovar(y, volatile=volatile)
-    B = tovar(B, volatile=volatile)
-    _, n_rows, n_cols = x.size()
-    x = x.unsqueeze(1).expand(batch_size, 3, n_rows, n_cols)
-
-    return x, y_cnt, y, B
-
-process_datum_valid = partial(process_datum, volatile=True)
+n_classes = 10
+ones = T.ones(batch_size, n_classes).long()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--n-max', type=int, default=1)
@@ -43,17 +31,6 @@ parser.add_argument('--loss', type=str, default='supervised')
 args = parser.parse_args()
 
 n_digits = 1 if args.loss != 'multi' else 3
-
-mnist_train = MNISTMulti('.', n_digits=n_digits, backrand=args.backnoise,
-        image_rows=args.image_size, image_cols=args.image_size, download=True)
-mnist_valid = MNISTMulti('.', n_digits=n_digits, backrand=args.backnoise,
-        image_rows=args.image_size, image_cols=args.image_size, download=False, mode='valid')
-mnist_train_dataloader = wrap_output(
-        T.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0),
-        process_datum)
-mnist_valid_dataloader = wrap_output(
-        T.utils.data.DataLoader(mnist_valid, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0),
-        process_datum_valid)
 
 wm = VisdomWindowManager(env=args.env)
 
@@ -72,16 +49,19 @@ if args.teacher:
         return NP.asscalar(tonumpy((y_cnt == y_pre_cnt).prod(1).sum()))
 
 else:
-    model = cuda(models.SequentialGlimpsedClassifier(
-        n_max=args.n_max,
-        pre_lstm_filters=[5, 5, 10],
-        lstm_dims=512,
-        mlp_dims=512,
-        n_class_embed_dims=50,
-        relative_previous=False,
-        glimpse_size=(args.glim_size, args.glim_size),
-        glimpse_type=args.glim_type,
-        glimpse_sample=(args.loss == 'hybrid')))
+    if args.loss != 'dfs':
+        model = cuda(models.SequentialGlimpsedClassifier(
+            n_max=args.n_max,
+            pre_lstm_filters=[5, 5, 10],
+            lstm_dims=512,
+            mlp_dims=512,
+            n_class_embed_dims=50,
+            relative_previous=False,
+            glimpse_size=(args.glim_size, args.glim_size),
+            glimpse_type=args.glim_type,
+            glimpse_sample=(args.loss == 'hybrid')))
+    else:
+        model = cuda(models.FixedFullTreeGlimpsedClassifier())
 
     if args.loss == 'supervised':
         loss_fn = losses.SupervisedClassifierLoss()
@@ -90,6 +70,8 @@ else:
         loss_fn = losses.HybridClassifierLoss(state_size=512, teacher=teacher)  # same as LSTM
     elif args.loss == 'multi':
         loss_fn = losses.SupervisedMultitaskMultiobjectLoss()
+    elif args.loss == 'dfs':
+        loss_fn = losses.RLClassifierLoss()
 
     register_backward_hooks(model)
     register_backward_hooks(loss_fn)
@@ -98,20 +80,19 @@ else:
 
     def train_loss(solver):
         x, y_cnt, y, B = solver.datum
+        batch_size, n_objects = y.size()
+
         B = B.float() / args.image_size
         batch_size, n_labels = y.size()
         if args.loss == 'supervised':
             loss = loss_fn(y[:, 0], solver.model.y_pre, solver.model.p_pre)
         elif args.loss == 'hybrid':
             loss = loss_fn(solver.model, y)
-        elif args.loss == 'map':
-            y = T.cat(
-                [y, tovar(T.zeros(batch_size, args.n_max - n_labels).long() + mnist_train.n_classes)],
-                -1
-                )
-            loss = loss_fn(y, solver.model.y_pre, solver.model.p_pre)
         elif args.loss == 'multi':
             loss = loss_fn(y, solver.model.y_pre, B, solver.model.v_B_pre, solver.model.idx)
+        elif args.loss == 'dfs':
+            loss = loss_fn(solver.model)
+
         return loss
 
     def acc(solver):
@@ -123,6 +104,37 @@ else:
             y_pre = solver.model.y_pre.max(-1)[1][:, 1:]
         y_pre_cnt = tovar(cuda(T.LongTensor(batch_size, 10).zero_())).scatter_add_(1, y_pre, T.ones_like(y_pre))
         return NP.asscalar(tonumpy((y_cnt == y_pre_cnt).prod(1).sum()))
+
+
+def process_datum(x, y, B, volatile=False):
+    batch_size, n_rows, n_cols = x.size()
+    n_objects = y.size()[1]
+    if args.loss == 'dfs':
+        y = T.stack([
+            y,
+            cuda(T.zeros(batch_size, 1) + model.n_leaves - n_objects),
+            ], axis=1)
+    y_cnt = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, y, ones))
+    x = tovar(x.float() / 255, volatile=volatile)
+    y_cnt = tovar(y_cnt, volatile=volatile)
+    y = tovar(y, volatile=volatile)
+    B = tovar(B, volatile=volatile)
+    x = x.unsqueeze(1).expand(batch_size, 3, n_rows, n_cols)
+
+    return x, y_cnt, y, B
+
+process_datum_valid = partial(process_datum, volatile=True)
+
+mnist_train = MNISTMulti('.', n_digits=n_digits, backrand=args.backnoise,
+        image_rows=args.image_size, image_cols=args.image_size, download=True)
+mnist_valid = MNISTMulti('.', n_digits=n_digits, backrand=args.backnoise,
+        image_rows=args.image_size, image_cols=args.image_size, download=False, mode='valid')
+mnist_train_dataloader = wrap_output(
+        T.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0),
+        process_datum)
+mnist_valid_dataloader = wrap_output(
+        T.utils.data.DataLoader(mnist_valid, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0),
+        process_datum_valid)
 
 
 def model_output(solver):
