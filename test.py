@@ -16,8 +16,6 @@ import matplotlib.pyplot as PL
 from logger import register_backward_hooks, log_grad
 
 batch_size = 64
-n_classes = 10
-ones = T.ones(batch_size, n_classes).long()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--n-max', type=int, default=1)
@@ -30,7 +28,9 @@ parser.add_argument('--glim-type', type=str, default='gaussian')
 parser.add_argument('--loss', type=str, default='supervised')
 args = parser.parse_args()
 
+n_classes = 10 + (1 if args.loss == 'dfs' else 0)
 n_digits = 1 if args.loss != 'multi' else 3
+ones = T.ones(batch_size, n_classes).long()
 
 wm = VisdomWindowManager(env=args.env)
 
@@ -42,10 +42,11 @@ if args.teacher:
         return F.cross_entropy(solver.model.y_pre, y[:, 0])
 
     def acc(solver):
+        global n_classes
         x, y_cnt, y, B = solver.datum
         B = B.float() / args.image_size
         y_pre = solver.model.y_pre.max(-1)[1]
-        y_pre_cnt = tovar(cuda(T.LongTensor(batch_size, 10).zero_())).scatter_add_(1, y_pre, T.ones_like(y_pre))
+        y_pre_cnt = tovar(cuda(T.LongTensor(batch_size, n_classes).zero_())).scatter_add_(1, y_pre, T.ones_like(y_pre))
         return NP.asscalar(tonumpy((y_cnt == y_pre_cnt).prod(1).sum()))
 
 else:
@@ -61,7 +62,9 @@ else:
             glimpse_type=args.glim_type,
             glimpse_sample=(args.loss == 'hybrid')))
     else:
-        model = cuda(models.FixedFullTreeGlimpsedClassifier())
+        model = cuda(models.FixedFullTreeGlimpsedClassifier(
+            n_classes=n_classes
+            ))
 
     if args.loss == 'supervised':
         loss_fn = losses.SupervisedClassifierLoss()
@@ -96,25 +99,32 @@ else:
         return loss
 
     def acc(solver):
+        global n_classes
         x, y_cnt, y, B = solver.datum
         B = B.float() / args.image_size
-        if args.loss != 'multi':
+        if args.loss == 'dfs':
+            y_pre = T.stack([
+                node.y_pre for node in solver.model.T if hasattr(node, 'y_pre')
+                ], 1)
+            y_pre = y_pre.max(-1)[1]
+        elif args.loss != 'multi':
             y_pre = solver.model.y_pre.max(-1)[1]
         else:
             y_pre = solver.model.y_pre.max(-1)[1][:, 1:]
-        y_pre_cnt = tovar(cuda(T.LongTensor(batch_size, 10).zero_())).scatter_add_(1, y_pre, T.ones_like(y_pre))
+        y_pre_cnt = tovar(cuda(T.LongTensor(batch_size, n_classes).zero_())).scatter_add_(1, y_pre, T.ones_like(y_pre))
         return NP.asscalar(tonumpy((y_cnt == y_pre_cnt).prod(1).sum()))
 
 
 def process_datum(x, y, B, volatile=False):
+    global n_classes
     batch_size, n_rows, n_cols = x.size()
     n_objects = y.size()[1]
     if args.loss == 'dfs':
-        y = T.stack([
+        y = T.cat([
             y,
-            cuda(T.zeros(batch_size, 1) + model.n_leaves - n_objects),
-            ], axis=1)
-    y_cnt = cuda(T.LongTensor(batch_size, 10).zero_().scatter_add_(1, y, ones))
+            cuda(T.zeros(batch_size, 1).long() + model.n_leaves - n_objects),
+            ], 1)
+    y_cnt = cuda(T.LongTensor(batch_size, n_classes).zero_().scatter_add_(1, y, ones))
     x = tovar(x.float() / 255, volatile=volatile)
     y_cnt = tovar(y_cnt, volatile=volatile)
     y = tovar(y, volatile=volatile)
@@ -142,6 +152,8 @@ def model_output(solver):
     B = B.float() / args.image_size
     if args.loss == 'multi':
         return solver.model(x, y=y, B=B, feedback='oracle')
+    elif args.loss == 'dfs':
+        return solver.model(x, y=y_cnt)
     return solver.model(x, y=y)
 
 def on_before_run(solver):

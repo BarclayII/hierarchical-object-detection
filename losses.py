@@ -20,20 +20,22 @@ class RLClassifierLoss(NN.Module):
         '''
         r_list = []
         log_prob_list = []
-        n_steps = y_hat.size()[1]
-        ones = T.ones_like(y)
         for node in model.T:
+            if not hasattr(node, 'R'):
+                # no prediction
+                continue
             r_list.append(node.R)
-            log_prob_list.append(node.y_pre.gather(1, node.y_hat))
+            log_prob_list.append(node.y_logprob.gather(1, node.y_hat))
+        n_steps = len(r_list)
 
         r = T.stack(r_list, 1)
 
         self.r = r
         self.b = r.mean(0, keepdim=True)
-        self.logprob = T.stack(T.stack(log_prob_list, 1))[..., 0]
+        self.logprob = T.stack(log_prob_list, 1)[..., 0]
 
         gamma = self.gamma ** tovar(
-                T.arange(n_steps)[None, :, None].expand_as(r))
+                T.arange(n_steps)[None, :].expand_as(r))
         self.q = reverse(reverse(gamma * (r - self.b), 1).cumsum(1), 1)
 
         loss = -(self.logprob * self.q).mean()
