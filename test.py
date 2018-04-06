@@ -30,7 +30,6 @@ args = parser.parse_args()
 
 n_classes = 10 + (1 if args.loss == 'dfs' else 0)
 n_digits = 1 if args.loss != 'multi' else 3
-ones = T.ones(batch_size, n_classes).long()
 
 wm = VisdomWindowManager(env=args.env)
 
@@ -119,12 +118,13 @@ def process_datum(x, y, B, volatile=False):
     global n_classes
     batch_size, n_rows, n_cols = x.size()
     n_objects = y.size()[1]
+    y = cuda(y)
     if args.loss == 'dfs':
         y = T.cat([
             y,
-            cuda(T.zeros(batch_size, 1).long() + model.n_leaves - n_objects),
+            cuda(T.zeros(batch_size, model.n_leaves - n_objects).long() + n_classes - 1),
             ], 1)
-    y_cnt = cuda(T.LongTensor(batch_size, n_classes).zero_().scatter_add_(1, y, ones))
+    y_cnt = cuda(T.LongTensor(batch_size, n_classes).zero_()).scatter_add_(1, y, T.ones_like(y))
     x = tovar(x.float() / 255, volatile=volatile)
     y_cnt = tovar(y_cnt, volatile=volatile)
     y = tovar(y, volatile=volatile)
