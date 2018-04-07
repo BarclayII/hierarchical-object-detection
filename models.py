@@ -377,7 +377,14 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
             for _j in range(self.n_children):
                 j = i * self.n_children + _j + 1
 
-                B = self.proj_h_B(h)
+                B_pre = self.proj_h_B(h)
+                B_pre, B_logprob = self.glimpse.rescale(
+                        B_pre, self.glimpse_sample)
+                if self.relative_previous:
+                    B = self.glimpse.relative_to_absolute(B_pre, B)
+                else:
+                    B = B_pre
+
                 o, y = self._dive(j, x, B, s, y)
                 h, s = self.rnn_b(o, s)
             return h, y
@@ -393,5 +400,6 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
         result = self._dive(0, x, B, s, y)
 
         self.v_B = T.stack([node.B for node in self.T if hasattr(node, 'B')], 1)
+        self.g = T.stack([node.g for node in self.T if hasattr(node, 'g')], 1)
 
         return result
