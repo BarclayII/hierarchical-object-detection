@@ -18,7 +18,8 @@ from logger import register_backward_hooks, log_grad
 batch_size = 64
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--n-max', type=int, default=1)
+parser.add_argument('--n-children', type=int, default=2)
+parser.add_argument('--depth', type=int, default=3)
 parser.add_argument('--glim-size', type=int, default=70)
 parser.add_argument('--image-size', type=int, default=70)
 parser.add_argument('--teacher', action='store_true')
@@ -29,7 +30,7 @@ parser.add_argument('--loss', type=str, default='supervised')
 args = parser.parse_args()
 
 n_classes = 11
-n_digits = 1 if args.loss != 'multi' else 3
+n_digits = 3
 
 wm = VisdomWindowManager(env=args.env)
 
@@ -50,7 +51,9 @@ if args.teacher:
 
 else:
     model = cuda(models.FixedFullTreeGlimpsedClassifier(
-        n_classes=n_classes
+        n_classes=n_classes,
+        n_children=args.n_children,
+        depth=args.depth,
         ))
     loss_fn = losses.RLClassifierLoss()
 
@@ -138,11 +141,9 @@ def on_after_train_batch(solver):
           min(p.data.min() for p in solver.model_params))
     if not args.teacher:
         print(tonumpy(solver.model.v_B[0]))
-        if args.loss == 'hybrid':
-            print('R', tonumpy(loss_fn.r)[0])
-            print('ΔR', tonumpy(loss_fn.dr)[0])
-            print('B', tonumpy(loss_fn.b)[0])
-            print('Q', tonumpy(loss_fn.q)[0])
+        print('R', tonumpy(loss_fn.r)[0])
+        print('B', tonumpy(loss_fn.b)[0])
+        print('Q', tonumpy(loss_fn.q)[0])
 
 def on_before_eval(solver):
     solver.total = solver.correct = 0
