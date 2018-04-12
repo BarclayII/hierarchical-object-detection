@@ -376,6 +376,8 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
             self.T[i].y_hat = y_hat
             return h, y
         else:
+            O = []
+
             for _j in range(self.n_children):
                 j = i * self.n_children + _j + 1
 
@@ -390,8 +392,9 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
                 #o, y = self._dive(j, x, B, h, y)
                 o, y = self._dive(j, x, B, s, y)
                 h, s = self.rnn_b(o, s)
+                O.append(o)
                 #h = F.relu(h + o)
-            return h, y
+            return T.stack(O, 0).mean(0), y
 
     def forward(self, x, y=None):
         batch_size = x.size()[0]
