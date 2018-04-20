@@ -393,5 +393,7 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
         result = self._dive(0, x, B, s, y)
 
         self.v_B = T.stack([node.B for node in self.T if hasattr(node, 'B')], 1)
+        self.y_pre = T.stack([node.y_pre for node in self.T if hasattr(node, 'y_pre')], 1)
+        self.p_pre = T.stack([node.p_pre for node in self.T if hasattr(node, 'p_pre')], 1)
 
         return result

@@ -88,7 +88,7 @@ else:
         B = B.float() / args.image_size
         batch_size, n_labels = y.size()
         if args.loss == 'supervised':
-            loss = loss_fn(y[:, 0], solver.model.y_pre, solver.model.p_pre)
+            loss = loss_fn(y, solver.model.y_pre)
         elif args.loss == 'hybrid':
             loss = loss_fn(solver.model, y)
         elif args.loss == 'multi':

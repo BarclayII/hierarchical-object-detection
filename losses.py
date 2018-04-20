@@ -115,13 +115,15 @@ class HybridClassifierLoss(NN.Module):
         return v_B_loss
 
 class SupervisedClassifierLoss(NN.Module):
-    def forward(self, y, y_pre, p_pre):
-        y_loss = F.cross_entropy(y_pre[:, -1], y)
+    def forward(self, y, y_pre):
+        n_classes = y_pre.size()[-1]
+        y_pre = y_pre.view(-1, n_classes)
+        y = y.view(-1)
+        y_loss = F.cross_entropy(y_pre, y)
         #p = p_pre.clone().zero_()
         #p[:, -1] = 1
         #p_loss = F.binary_cross_entropy_with_logits(p_pre, p)
-        p_loss = 0
-        return y_loss + p_loss
+        return y_loss
 
 
 class SupervisedMultitaskMultiobjectLoss(NN.Module):
