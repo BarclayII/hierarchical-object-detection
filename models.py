@@ -410,7 +410,6 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
 
         self.v_B = T.stack([node.B for node in self.T if hasattr(node, 'B')], 1)
         self.y_pre = T.stack([node.y_pre for node in self.T if hasattr(node, 'y_pre')], 1)
-        self.p_pre = T.stack([node.p_pre for node in self.T if hasattr(node, 'p_pre')], 1)
         self.g = T.stack([node.g for node in self.T if hasattr(node, 'g')], 1)
 
         return result
