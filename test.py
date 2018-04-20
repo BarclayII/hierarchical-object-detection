@@ -18,7 +18,8 @@ from logger import register_backward_hooks, log_grad
 batch_size = 64
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--n-max', type=int, default=1)
+parser.add_argument('--n-children', type=int, default=2)
+parser.add_argument('--depth', type=int, default=3)
 parser.add_argument('--glim-size', type=int, default=70)
 parser.add_argument('--image-size', type=int, default=70)
 parser.add_argument('--teacher', action='store_true')
@@ -28,9 +29,8 @@ parser.add_argument('--glim-type', type=str, default='gaussian')
 parser.add_argument('--loss', type=str, default='supervised')
 args = parser.parse_args()
 
-n_classes = 10 + (1 if args.loss == 'dfs' else 0)
-n_digits = 1 if args.loss != 'multi' else 3
-ones = T.ones(batch_size, n_classes).long()
+n_classes = 11
+n_digits = 3
 
 wm = VisdomWindowManager(env=args.env)
 
@@ -50,31 +50,12 @@ if args.teacher:
         return NP.asscalar(tonumpy((y_cnt == y_pre_cnt).prod(1).sum()))
 
 else:
-    if args.loss != 'dfs':
-        model = cuda(models.SequentialGlimpsedClassifier(
-            n_max=args.n_max,
-            pre_lstm_filters=[5, 5, 10],
-            lstm_dims=512,
-            mlp_dims=512,
-            n_class_embed_dims=50,
-            relative_previous=False,
-            glimpse_size=(args.glim_size, args.glim_size),
-            glimpse_type=args.glim_type,
-            glimpse_sample=(args.loss == 'hybrid')))
-    else:
-        model = cuda(models.FixedFullTreeGlimpsedClassifier(
-            n_classes=n_classes
-            ))
-
-    if args.loss == 'supervised':
-        loss_fn = losses.SupervisedClassifierLoss()
-    elif args.loss == 'hybrid':
-        teacher = T.load('teacher.pt')
-        loss_fn = losses.HybridClassifierLoss(state_size=512, teacher=teacher)  # same as LSTM
-    elif args.loss == 'multi':
-        loss_fn = losses.SupervisedMultitaskMultiobjectLoss()
-    elif args.loss == 'dfs':
-        loss_fn = losses.RLClassifierLoss()
+    model = cuda(models.FixedFullTreeGlimpsedClassifier(
+        n_classes=n_classes,
+        n_children=args.n_children,
+        depth=args.depth,
+        ))
+    loss_fn = losses.SupervisedClassifierLoss()
 
     register_backward_hooks(model)
     register_backward_hooks(loss_fn)
@@ -87,14 +68,7 @@ else:
 
         B = B.float() / args.image_size
         batch_size, n_labels = y.size()
-        if args.loss == 'supervised':
-            loss = loss_fn(y, solver.model.y_pre)
-        elif args.loss == 'hybrid':
-            loss = loss_fn(solver.model, y)
-        elif args.loss == 'multi':
-            loss = loss_fn(y, solver.model.y_pre, B, solver.model.v_B_pre, solver.model.idx)
-        elif args.loss == 'dfs':
-            loss = loss_fn(solver.model)
+        loss = loss_fn(solver.model, y, solver.model.y_pre)
 
         return loss
 
@@ -102,15 +76,10 @@ else:
         global n_classes
         x, y_cnt, y, B = solver.datum
         B = B.float() / args.image_size
-        if args.loss == 'dfs':
-            y_pre = T.stack([
-                node.y_pre for node in solver.model.T if hasattr(node, 'y_pre')
-                ], 1)
-            y_pre = y_pre.max(-1)[1]
-        elif args.loss != 'multi':
-            y_pre = solver.model.y_pre.max(-1)[1]
-        else:
-            y_pre = solver.model.y_pre.max(-1)[1][:, 1:]
+        y_pre = T.stack([
+            node.y_pre for node in solver.model.T if hasattr(node, 'y_pre')
+            ], 1)
+        y_pre = y_pre.max(-1)[1]
         y_pre_cnt = tovar(cuda(T.LongTensor(batch_size, n_classes).zero_())).scatter_add_(1, y_pre, T.ones_like(y_pre))
         return NP.asscalar(tonumpy((y_cnt == y_pre_cnt).prod(1).sum()))
 
@@ -119,12 +88,12 @@ def process_datum(x, y, B, volatile=False):
     global n_classes
     batch_size, n_rows, n_cols = x.size()
     n_objects = y.size()[1]
-    if args.loss == 'dfs':
-        y = T.cat([
-            y,
-            cuda(T.zeros(batch_size, 1).long() + model.n_leaves - n_objects),
-            ], 1)
-    y_cnt = cuda(T.LongTensor(batch_size, n_classes).zero_().scatter_add_(1, y, ones))
+    y = cuda(y)
+    y = T.cat([
+        y,
+        cuda(T.zeros(batch_size, model.n_leaves - n_objects).long() + n_classes - 1),
+        ], 1)
+    y_cnt = cuda(T.LongTensor(batch_size, n_classes).zero_()).scatter_add_(1, y, T.ones_like(y))
     x = tovar(x.float() / 255, volatile=volatile)
     y_cnt = tovar(y_cnt, volatile=volatile)
     y = tovar(y, volatile=volatile)
@@ -150,11 +119,7 @@ mnist_valid_dataloader = wrap_output(
 def model_output(solver):
     x, y_cnt, y, B = solver.datum
     B = B.float() / args.image_size
-    if args.loss == 'multi':
-        return solver.model(x, y=y, B=B, feedback='oracle')
-    elif args.loss == 'dfs':
-        return solver.model(x, y=y_cnt)
-    return solver.model(x, y=y)
+    return solver.model(x, y=y_cnt)
 
 def on_before_run(solver):
     solver.best_correct = 0
@@ -176,11 +141,9 @@ def on_after_train_batch(solver):
           min(p.data.min() for p in solver.model_params))
     if not args.teacher:
         print(tonumpy(solver.model.v_B[0]))
-        if args.loss == 'hybrid':
-            print('R', tonumpy(loss_fn.r)[0])
-            print('ΔR', tonumpy(loss_fn.dr)[0])
-            print('B', tonumpy(loss_fn.b)[0])
-            print('Q', tonumpy(loss_fn.q)[0])
+        print('R', tonumpy(loss_fn.r)[0])
+        print('B', tonumpy(loss_fn.b)[0])
+        print('Q', tonumpy(loss_fn.q)[0])
 
 def on_before_eval(solver):
     solver.total = solver.correct = 0
@@ -196,23 +159,16 @@ def on_after_eval_batch(solver):
     if not args.teacher:
         if solver.nviz > 0:
             solver.nviz -= 1
-            if args.loss == 'hybrid':
-                fig, ax = PL.subplots(2, 5)
-            else:
-                fig, ax = PL.subplots(2, 3)
+            fig, ax = PL.subplots(2, 5)
             fig.set_size_inches(10, 8)
 
             x, _, _, B = solver.datum
             ax.flatten()[0].imshow(tonumpy(x[0].permute(1, 2, 0)))
             addbox(ax.flatten()[0], tonumpy(B[0, 0]), 'red')
             v_B = tonumpy(solver.model.v_B)
-            for i in range(args.n_max):
+            for i in range(solver.model.n_nodes):
                 addbox(ax.flatten()[0], tonumpy(v_B[0, i, :4] * args.image_size), 'yellow', i+1)
                 ax.flatten()[i + 1].imshow(tonumpy(solver.model.g[0, i].permute(1, 2, 0)), vmin=0, vmax=1)
-                if args.loss == 'hybrid' and i < args.n_max - 1:
-                    ax.flatten()[i + 6].imshow(tonumpy(loss_fn.m[0, i].permute(1, 2, 0).clamp(min=0, max=1)),
-                            vmin=0, vmax=1)
-                    ax.flatten()[i + 6].set_title('%.3f' % NP.asscalar(tonumpy(loss_fn.r[0, i])))
             wm.display_mpl_figure(fig, win='viz{}'.format(solver.nviz))
 
 def on_after_eval(solver):

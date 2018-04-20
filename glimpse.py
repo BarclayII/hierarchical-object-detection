@@ -78,8 +78,8 @@ class GaussianGlimpse(NN.Module):
 
     @classmethod
     def full(cls):
-        #return tovar([0.5, 0.5, 1, 1, 0.5, 0.5])
-        return tovar([0.5, 0.5, 1, 1, 0.1, 0.1])
+        return tovar([0.5, 0.5, 1, 1, 0.5, 0.5])
+        #return tovar([0.5, 0.5, 1, 1, 0.1, 0.1])
 
     @classmethod
     def rescale(cls, x, glimpse_sample):
@@ -89,10 +89,10 @@ class GaussianGlimpse(NN.Module):
                     F.sigmoid(x[..., 1]),    # cy
                     F.sigmoid(x[..., 2]) * 2,
                     F.sigmoid(x[..., 3]) * 2,
-                    #F.sigmoid(x[..., 4]),
-                    #F.sigmoid(x[..., 5]),
-                    T.zeros_like(x[..., 4]) + 0.1,
-                    T.zeros_like(x[..., 5]) + 0.1,
+                    F.sigmoid(x[..., 4]),
+                    F.sigmoid(x[..., 5]),
+                    #T.zeros_like(x[..., 4]) + 0.1,
+                    #T.zeros_like(x[..., 5]) + 0.1,
                     ]
             logprob = 0
         else:

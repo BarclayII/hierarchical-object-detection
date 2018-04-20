@@ -267,7 +267,6 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
                  lstm_dims=128,
                  kernel_size=(3, 3),
                  final_pool_size=(2, 2),
-                 n_max=10,
                  in_channels=3,
                  mlp_dims=128,
                  n_classes=10,
@@ -308,9 +307,10 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
         self.proj_h_B = build_mlp(input_size=lstm_dims,
                                   layer_sizes=[mlp_dims, self.glimpse.att_params])
         self.y_in = NN.Embedding(n_classes, message_dims)
+        INIT.uniform(self.y_in.weight, -0.01, 0.01)
 
-        self.n_max = n_max
         self.lstm_dims = lstm_dims
+        self.message_dims = message_dims
         self.n_classes = n_classes
         self.glimpse_sample = glimpse_sample
         self.y_sample = y_sample
@@ -350,6 +350,8 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
         I = self.proj_I(T.cat([phi, B], 1))
 
         h, s = self.rnn_d(I, s)
+        #h = s
+        #h = F.relu(h + I)
 
         self.T[i].g = g
         self.T[i].phi = phi
@@ -374,13 +376,25 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
             self.T[i].y_hat = y_hat
             return h, y
         else:
+            O = []
+
             for _j in range(self.n_children):
                 j = i * self.n_children + _j + 1
 
-                B = self.proj_h_B(h)
+                B_pre = self.proj_h_B(h)
+                B_pre, B_logprob = self.glimpse.rescale(
+                        B_pre, self.glimpse_sample)
+                if self.relative_previous:
+                    B = self.glimpse.relative_to_absolute(B_pre, B)
+                else:
+                    B = B_pre
+
+                #o, y = self._dive(j, x, B, h, y)
                 o, y = self._dive(j, x, B, s, y)
                 h, s = self.rnn_b(o, s)
-            return h, y
+                O.append(o)
+                #h = F.relu(h + o)
+            return T.stack(O, 0).mean(0), y
 
     def forward(self, x, y=None):
         batch_size = x.size()[0]
@@ -389,11 +403,14 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
 
         self.T = [_Node() for _ in range(0, self.n_nodes)]
         s = self.rnn_d.zero_state(batch_size)
+        #h = tovar(T.zeros(batch_size, self.message_dims))
 
         result = self._dive(0, x, B, s, y)
+        #result = self._dive(0, x, B, h, y)
 
         self.v_B = T.stack([node.B for node in self.T if hasattr(node, 'B')], 1)
         self.y_pre = T.stack([node.y_pre for node in self.T if hasattr(node, 'y_pre')], 1)
         self.p_pre = T.stack([node.p_pre for node in self.T if hasattr(node, 'p_pre')], 1)
+        self.g = T.stack([node.g for node in self.T if hasattr(node, 'g')], 1)
 
         return result
