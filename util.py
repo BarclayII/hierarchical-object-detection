@@ -67,3 +67,18 @@ def overlay(fore, fore_bbox, back):
     result = fore_rgb * fore_alpha + back * (1 - fore_alpha)
 
     return result
+
+def intersection(a, b):
+    x1 = T.max(a[..., 0] - a[..., 2] / 2, b[..., 0] - b[..., 2] / 2)
+    y1 = T.max(a[..., 1] - a[..., 3] / 2, b[..., 1] - b[..., 3] / 2)
+    x2 = T.min(a[..., 0] + a[..., 2] / 2, b[..., 0] + b[..., 2] / 2)
+    y2 = T.min(a[..., 1] + a[..., 3] / 2, b[..., 1] + b[..., 3] / 2)
+    w = (x2 - x1).clamp(min=0)
+    h = (y2 - y1).clamp(min=0)
+    return w * h
+
+def iou(a, b):
+    i_area = intersection(a, b)
+    a_area = a[..., 2] * a[..., 3]
+    b_area = b[..., 2] * b[..., 3]
+    return i_area / (a_area + b_area - i_area)

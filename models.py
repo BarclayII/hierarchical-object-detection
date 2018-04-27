@@ -9,6 +9,9 @@ from util import *
 from glimpse import create_glimpse
 from zoneout import ZoneoutLSTMCell
 from collections import namedtuple
+import os
+
+no_msg = os.getenv('NOMSG', False)
 
 def build_cnn(**config):
     cnn_list = []
@@ -374,6 +377,9 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
             self.T[i].y_pre = y_pre
             self.T[i].y_logprob = y_logprob
             self.T[i].y_hat = y_hat
+
+            if no_msg:
+                h = T.zeros_like(h)
             return h, y
         else:
             O = []
@@ -394,7 +400,11 @@ class FixedFullTreeGlimpsedClassifier(NN.Module):
                 h, s = self.rnn_b(o, s)
                 O.append(o)
                 #h = F.relu(h + o)
-            return T.stack(O, 0).mean(0), y
+
+            o = T.stack(O, 0).mean(0)
+            if no_msg:
+                o = T.zeros_like(o)
+            return o, y
 
     def forward(self, x, y=None):
         batch_size = x.size()[0]

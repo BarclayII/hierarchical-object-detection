@@ -55,6 +55,7 @@ else:
         n_children=args.n_children,
         depth=args.depth,
         ))
+    #loss_fn = losses.RLClassifierLoss()
     loss_fn = losses.SupervisedClassifierLoss()
 
     register_backward_hooks(model)
@@ -68,7 +69,8 @@ else:
 
         B = B.float() / args.image_size
         batch_size, n_labels = y.size()
-        loss = loss_fn(solver.model, y, solver.model.y_pre)
+        #loss = loss_fn(solver.model)
+        loss = loss_fn(y, solver.model.y_pre)
 
         return loss
 
@@ -132,6 +134,8 @@ def on_before_step(solver):
     solver.norm = clip_grad_norm(solver.model_params, 1)
 
 def on_after_train_batch(solver):
+    x, y_cnt, y, B = solver.datum
+    B = B.float() / args.image_size
     print(solver.epoch,
           solver.batch,
           solver.eval_metric[0],
@@ -141,9 +145,15 @@ def on_after_train_batch(solver):
           min(p.data.min() for p in solver.model_params))
     if not args.teacher:
         print(tonumpy(solver.model.v_B[0]))
-        print('R', tonumpy(loss_fn.r)[0])
-        print('B', tonumpy(loss_fn.b)[0])
-        print('Q', tonumpy(loss_fn.q)[0])
+        print(tonumpy(B[0]))
+        print('IOU', tonumpy(iou(
+            solver.model.v_B[:, :, :4].index_select(
+                1,
+                tovar(T.LongTensor([2, 3, 5]))),
+            B)).mean())
+        #print('R', tonumpy(loss_fn.r)[0])
+        #print('B', tonumpy(loss_fn.b)[0])
+        #print('Q', tonumpy(loss_fn.q)[0])
 
 def on_before_eval(solver):
     solver.total = solver.correct = 0
