@@ -50,7 +50,7 @@ if args.teacher:
         return NP.asscalar(tonumpy((y_cnt == y_pre_cnt).prod(1).sum()))
 
 else:
-    model = cuda(models.FixedFullTreeGlimpsedClassifier(
+    model = cuda(models.TreeGlimpsedClassifier(
         n_classes=n_classes,
         n_children=args.n_children,
         depth=args.depth,

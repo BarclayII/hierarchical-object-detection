@@ -2,7 +2,7 @@ import networkx as nx
 import torch as T
 import torch.nn as NN
 
-class DiGraph(nx.DiGraph):
+class DiGraph(nx.DiGraph, NN.Module):
     '''
     Reserved attributes:
     * state: node state vectors during message passing iterations
@@ -25,7 +25,7 @@ class DiGraph(nx.DiGraph):
     def add_edge(self, u, v, tag=None, attr_dict=None, **attr):
         nx.DiGraph.add_edge(self, u, v, tag=tag, attr_dict=attr_dict, **attr)
 
-    def add_edges_from(self, ebunch, tag=tag, attr_dict=None, **attr):
+    def add_edges_from(self, ebunch, tag=None, attr_dict=None, **attr):
         nx.DiGraph.add_edges_from(self, ebunch, tag=tag, attr_dict=attr_dict, **attr)
 
     def _nodes_or_all(self, nodes='all'):
@@ -128,8 +128,8 @@ class DiGraph(nx.DiGraph):
                 source = T.stack([self.node[u]['state'] for u, _ in ebunch])
                 edge_tag = T.stack([self[u][v]['tag'] for u, v in ebunch])
                 message = f(source, edge_tag)
-                for u, v in ebunch:
-                    self[u][v]['state'] = message
+                for i, (u, v) in enumerate(ebunch):
+                    self[u][v]['state'] = message[i]
             else:
                 for u, v in ebunch:
                     self[u][v]['state'] = f(
