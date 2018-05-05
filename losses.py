@@ -116,7 +116,7 @@ class HybridClassifierLoss(NN.Module):
 
 class SupervisedClassifierLoss(NN.Module):
     def forward(self, y, y_pre):
-        n_classes = y_pre.size()[-1]
+        batch_size, n_digits, n_classes = y_pre.size()
         y_pre = y_pre.view(-1, n_classes)
         y = y.view(-1)
         y_loss = F.cross_entropy(y_pre, y)

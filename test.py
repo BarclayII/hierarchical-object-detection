@@ -53,7 +53,7 @@ else:
     model = cuda(models.TreeGlimpsedClassifier(
         n_classes=n_classes,
         n_children=args.n_children,
-        depth=args.depth,
+        n_depth=args.depth,
         ))
     #loss_fn = losses.RLClassifierLoss()
     loss_fn = losses.SupervisedClassifierLoss()
@@ -78,9 +78,7 @@ else:
         global n_classes
         x, y_cnt, y, B = solver.datum
         B = B.float() / args.image_size
-        y_pre = T.stack([
-            node.y_pre for node in solver.model.T if hasattr(node, 'y_pre')
-            ], 1)
+        y_pre = solver.model.y_pre
         y_pre = y_pre.max(-1)[1]
         y_pre_cnt = tovar(cuda(T.LongTensor(batch_size, n_classes).zero_())).scatter_add_(1, y_pre, T.ones_like(y_pre))
         return NP.asscalar(tonumpy((y_cnt == y_pre_cnt).prod(1).sum()))
@@ -178,7 +176,7 @@ def on_after_eval_batch(solver):
             v_B = tonumpy(solver.model.v_B)
             for i in range(solver.model.n_nodes):
                 addbox(ax.flatten()[0], tonumpy(v_B[0, i, :4] * args.image_size), 'yellow', i+1)
-                ax.flatten()[i + 1].imshow(tonumpy(solver.model.g[0, i].permute(1, 2, 0)), vmin=0, vmax=1)
+                #ax.flatten()[i + 1].imshow(tonumpy(solver.model.g[0, i].permute(1, 2, 0)), vmin=0, vmax=1)
             wm.display_mpl_figure(fig, win='viz{}'.format(solver.nviz))
 
 def on_after_eval(solver):
