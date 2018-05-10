@@ -147,7 +147,7 @@ def on_after_train_batch(solver):
         print('IOU', tonumpy(iou(
             solver.model.v_B[:, :, :4].index_select(
                 1,
-                tovar(T.LongTensor([2, 3, 5]))),
+                tovar(T.LongTensor([3, 4, 5]))),
             B)).mean())
         #print('R', tonumpy(loss_fn.r)[0])
         #print('B', tonumpy(loss_fn.b)[0])
